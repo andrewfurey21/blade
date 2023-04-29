@@ -1,6 +1,6 @@
-use vulkano;
+
+use holy_cad::run;
 
 fn main() {
-    println!("holy-cad");
-
+    run();
 }
