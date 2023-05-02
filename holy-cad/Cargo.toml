@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.71"
-ash = { version = "0.37.2", features = ["loaded"] }
+ash = { version = "0.37.2", features = ["loaded", "linked"] }
+gpu-allocator = "0.22.0"
