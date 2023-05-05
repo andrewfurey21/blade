@@ -64,6 +64,8 @@ fn main() -> Result<()> {
     let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
 
     let value_count = 16;
+    let value = 125;
+
 
     let buffer = {
         let buffer_create_info = vk::BufferCreateInfo {
@@ -127,6 +129,26 @@ fn main() -> Result<()> {
             .next()
             .context("No command buffer found.")?
     };
+
+    {
+        let begin_info = vk::CommandBufferBeginInfo::builder();
+        unsafe { device.begin_command_buffer(command_buffer, &begin_info) }?;
+    }
+
+    unsafe {
+        device.cmd_fill_buffer(
+            command_buffer,
+            buffer,
+            allocation.as_ref().unwrap().offset(),
+            allocation.as_ref().unwrap().size(),
+            value
+        );
+    }
+
+    unsafe { device.end_command_buffer(command_buffer) }?;
+
+
+
 
     allocator
         .as_mut()
