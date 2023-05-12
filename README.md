@@ -1,12 +1,13 @@
-# Holy-CAD
+# cad-rs
 
 A CAD tool written in Rust
 
-### Features
+### Goals
 
-- [ ] Model import/export
-- [ ] 3D view: pan, zoom, move
-- [ ] 3D tools: Extrude, Revolve, Fillet, Thread, 2D sketch/planes, 
-- [ ] 2D tools: Circle/Ellipses, bezier curvers, lines, dimension, polygon, Text, images
-- [ ] Tree view, with ability to make branches
-- [ ] Autosave
+1. Learn Vulkan
+2. Pratice Rust
+3. Print models off the application
+
+
+
+
