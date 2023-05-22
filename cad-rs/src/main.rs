@@ -7,30 +7,38 @@ use softbuffer::GraphicsContext;
 use std::time;
 use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::WindowBuilder};
 
-fn create_instance() -> vk::Instance {
+fn create_instance(entry: &ash::Entry) -> Result<ash::Instance, &'static str> {
     let application_info = vk::ApplicationInfo::builder().api_version(vk::API_VERSION_1_3);
     let create_info = vk::InstanceCreateInfo::builder().application_info(&application_info);
-    unsafe { entry.create_instance(&create_info, None) }.expect("Could not create instance")
+    unsafe { entry.create_instance(&create_info, None) }.map_err(|_| "Couldn't create instance.")
 }
 
-fn pick_physical_device() -> vk::PhysicalDevice {
-    unsafe { instance.enumerate_physical_devices().unwrap() }
-        .into_iter()
-        .next()
-        .expect("No physical devices found")
+fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice, &'static str> {
+    unsafe {
+        instance
+            .enumerate_physical_devices()
+            .map_err(|_| "Couldn't enumerate physical devices.")
+    }?
+    .into_iter()
+    .next()
+    .ok_or_else(|| "No physical devices available.")
 }
 
-fn choose_queue_family_index() -> u32 {
-    unsafe { instance.get_physical_device_queue_family_properties(physical_device) }
-        .into_iter()
-        .enumerate()
-        .filter(|queue_family_properties| {
-            queue_family_properties
-                .1
-                .queue_flags
-                .intersects(vk::QueueFlags::GRAPHICS)
-        })
-        .collect::<Vec<_>>();
+fn choose_queue_family_index(
+    instance: &ash::Instance,
+    physical_device: vk::PhysicalDevice,
+) -> Result<usize, &'static str> {
+    let mut queue_family_properties =
+        unsafe { instance.get_physical_device_queue_family_properties(physical_device) }
+            .into_iter()
+            .enumerate()
+            .filter(|queue_family_properties| {
+                queue_family_properties
+                    .1
+                    .queue_flags
+                    .intersects(vk::QueueFlags::GRAPHICS)
+            })
+            .collect::<Vec<_>>();
 
     queue_family_properties.sort_by_key(|queue_family_property| {
         (
@@ -38,17 +46,20 @@ fn choose_queue_family_index() -> u32 {
             queue_family_property.1.queue_count,
         )
     });
-
     queue_family_properties
         .first()
-        .expect("No available queue families")
-        .0 as u32
+        .map(|enumerated_queue| enumerated_queue.0)
+        .ok_or_else(|| "Couldn't return queue family index")
 }
 
-fn create_logical_device() -> vk::Device {
-    let priorities = [1.0]; // TODO: add length as arg
+fn create_logical_device(
+    instance: &ash::Instance,
+    physical_device: vk::PhysicalDevice,
+    queue_family_index: u32,
+) -> Result<ash::Device, &'static str> {
+    let priorities = [1.0];
     let queue_create_info = vk::DeviceQueueCreateInfo::builder()
-        .queue_family_index(index)
+        .queue_family_index(queue_family_index)
         .queue_priorities(&priorities);
 
     let create_info = vk::DeviceCreateInfo::builder()
@@ -57,12 +68,19 @@ fn create_logical_device() -> vk::Device {
     unsafe {
         instance
             .create_device(physical_device, &create_info, None)
-            .unwrap()
+            .map_err(|_| "Couldn't create logical device.")
     }
 }
 
-fn create_allocator() -> Option<Allocator> {
-    let i = 1;
+fn get_queue_at_index(device: &ash::Device, index: u32) -> vk::Queue {
+    unsafe { device.get_device_queue(index, 0) }
+}
+
+fn create_allocator(
+    instance: &ash::Instance,
+    device: &ash::Device,
+    physical_device: vk::PhysicalDevice,
+) -> Result<Allocator, &'static str> {
     let allocator_create_description = AllocatorCreateDesc {
         instance: instance.clone(),
         device: device.clone(),
@@ -71,13 +89,85 @@ fn create_allocator() -> Option<Allocator> {
         buffer_device_address: false,
     };
 
-    Allocator::new(&allocator_create_description).unwrap()
+    Allocator::new(&allocator_create_description).map_err(|_| "Couldn't create allocator.")
 }
 
-fn run<E>() -> Result<(), E>
-where
-    E: std::error::Error,
-{
+fn create_allocation(
+    device: &ash::Device,
+    allocator: &mut Allocator,
+    buffer: ash::vk::Buffer,
+) -> Result<Allocation, &'static str> {
+    let memory_requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
+
+    let allocation_create_description = AllocationCreateDesc {
+        name: "Buffer Allocation",
+        requirements: memory_requirements,
+        location: MemoryLocation::GpuOnly,
+        linear: true,
+        allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+    };
+
+    let allocation = allocator
+        .allocate(&allocation_create_description)
+        .map_err(|_| "Couldn't create allocation.")?;
+
+    unsafe {
+        device
+            .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())
+            .map_err(|_| "Couldn't bind buffer to memory.")?;
+    }
+    Ok(allocation)
+}
+
+fn create_buffer(device: &ash::Device, size: u32) -> Result<vk::Buffer, &'static str> {
+    let buffer_create_info = vk::BufferCreateInfo::builder()
+        .size((size as usize * std::mem::size_of::<u32>()) as vk::DeviceSize)
+        .usage(vk::BufferUsageFlags::TRANSFER_DST);
+
+    unsafe {
+        device
+            .create_buffer(&buffer_create_info, None)
+            .map_err(|_| "Couldn't create buffer.")
+    }
+}
+
+fn create_command_pool(
+    device: &ash::Device,
+    queue_index: u32,
+) -> Result<vk::CommandPool, &'static str> {
+    let create_info = vk::CommandPoolCreateInfo::builder()
+        .queue_family_index(queue_index)
+        .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+
+    unsafe { device.create_command_pool(&create_info, None) }
+        .map_err(|_| "Couldn't create command pool")
+}
+
+fn create_command_buffer(
+    device: &ash::Device,
+    command_pool: vk::CommandPool,
+) -> Result<vk::CommandBuffer, &'static str> {
+    let create_info = vk::CommandBufferAllocateInfo::builder()
+        .level(vk::CommandBufferLevel::PRIMARY)
+        .command_pool(command_pool)
+        .command_buffer_count(1);
+
+    unsafe { device.allocate_command_buffers(&create_info) }
+        .map_err(|_| "Couldn't create command buffers.")?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "No command buffer found.")
+}
+
+fn create_fence(device: &ash::Device) -> Result<vk::Fence, &'static str> {
+    let create_info = vk::FenceCreateInfo::builder()
+        .flags(vk::FenceCreateFlags::SIGNALED)
+        .build();
+
+    unsafe { device.create_fence(&create_info, None) }.map_err(|_| "Couldn't create fence.")
+}
+
+fn run() -> Result<(), &'static str> {
     let width: u32 = 400;
     let height: u32 = 400;
 
@@ -89,95 +179,40 @@ where
         .with_title(application_title)
         .with_inner_size(PhysicalSize::new(width, height))
         .with_resizable(resizable_window)
-        .build(&event_loop)?;
+        .build(&event_loop)
+        .map_err(|_| "Couldn't create window.")?;
 
-    let mut graphics_context = unsafe { GraphicsContext::new(&window, &window) }?;
+    let mut graphics_context = unsafe { GraphicsContext::new(&window, &window) }
+        .map_err(|_| "Couldn't create graphics context.")?;
 
-    let entry = unsafe { ash::Entry::load() }?;
+    let entry = unsafe { ash::Entry::load() }.map_err(|_| "Couldn't create Vulkan entry.")?;
 
-    let instance = create_instance();
-    let physical_device = pick_physical_device();
+    let instance = create_instance(&entry)?;
 
-    let queue_family_index = choose_family_queue_index();
-    let device = create_logical_device();
+    let physical_device = pick_physical_device(&instance)?;
 
-    let queue = unsafe { device.get_device_queue(index, 0) };
-    return Ok(());
-}
+    let queue_family_index = choose_queue_family_index(&instance, physical_device)? as u32;
+    let device = create_logical_device(&instance, physical_device, queue_family_index)?;
 
-fn main() {
-    env_logger::init();
-    info!("Starting up application...");
+    let queue = get_queue_at_index(&device, queue_family_index);
 
-    let device = {};
+    let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
 
-    let mut allocator = Option::Some({});
+    let size_of_buffer = width * height;
+    let buffer = create_buffer(&device, size_of_buffer)?;
+    let mut allocation = Some(create_allocation(&device, allocator.as_mut().unwrap(), buffer)?);
 
-    let buffer = {
-        let buffer_create_info = vk::BufferCreateInfo::builder()
-            .size((width * height) as vk::DeviceSize * std::mem::size_of::<u32>() as vk::DeviceSize)
-            .usage(vk::BufferUsageFlags::TRANSFER_DST);
+    let command_pool = create_command_pool(&device, queue_family_index)?;
+    let command_buffer = create_command_buffer(&device, command_pool)?;
 
-        unsafe { device.create_buffer(&buffer_create_info, None).unwrap() }
-    };
-
-    let mut allocation = Option::Some({
-        let memory_requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
-
-        let allocation_create_description = AllocationCreateDesc {
-            name: "Buffer Allocation",
-            requirements: memory_requirements,
-            location: MemoryLocation::GpuToCpu,
-            linear: true, // buffers are always linear
-            allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-        };
-
-        let allocation = allocator
-            .as_mut()
-            .unwrap()
-            .allocate(&allocation_create_description)
-            .unwrap();
-
-        unsafe {
-            device
-                .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())
-                .unwrap()
-        };
-        allocation
-    });
-
-    let command_pool = {
-        let create_info = vk::CommandPoolCreateInfo::builder()
-            .queue_family_index(index)
-            .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-
-        unsafe { device.create_command_pool(&create_info, None) }.unwrap()
-    };
-
-    let command_buffer = {
-        let create_info = vk::CommandBufferAllocateInfo::builder()
-            .level(vk::CommandBufferLevel::PRIMARY)
-            .command_pool(command_pool)
-            .command_buffer_count(1);
-
-        unsafe { device.allocate_command_buffers(&create_info).unwrap() }
-            .into_iter()
-            .next()
-            .expect("no command buffer found")
-    };
-
-    let fence = {
-        let create_info = vk::FenceCreateInfo::builder()
-            .flags(vk::FenceCreateFlags::SIGNALED)
-            .build();
-
-        unsafe { device.create_fence(&create_info, None).unwrap() }
-    };
+    let fence = create_fence(&device)?;
 
     let mut t: f64 = 0.0;
     let mut red = 0;
     let blue = 125;
     let green = 50;
+
+
     event_loop.run(move |event, _, control_flow| match event {
         winit::event::Event::WindowEvent { window_id, event } => {
             if window_id == window.id() {
@@ -237,16 +272,29 @@ fn main() {
             unsafe { device.destroy_command_pool(command_pool, None) }
 
             allocator
-                .as_mut()
-                .unwrap()
+              .as_mut()
+              .unwrap()
                 .free(allocation.take().unwrap())
                 .unwrap();
             drop(allocator.take().unwrap());
             unsafe { device.destroy_buffer(buffer, None) }
-
             unsafe { device.destroy_device(None) }
             unsafe { instance.destroy_instance(None) }
         }
         _ => {}
     });
+
+    Ok(())
+}
+
+fn main() {
+    env_logger::init();
+    info!("Starting up application...");
+
+    let output = run();
+    if let Err(error_description) = output {
+        error!("Error: {}", error_description);
+    }
+    info!("Closing down application.");
+
 }
