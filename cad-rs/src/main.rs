@@ -8,12 +8,11 @@ use std::time;
 use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::WindowBuilder};
 
 fn create_instance(entry: &ash::Entry) -> Result<ash::Instance, &'static str> {
-    let application_info = vk::ApplicationInfo::builder()
-        .api_version(vk::API_VERSION_1_3)
-        .application_name("cad-rs");
+   let application_info = vk::ApplicationInfo::builder()
+        .api_version(vk::API_VERSION_1_3);
 
     let create_info = vk::InstanceCreateInfo::builder().application_info(&application_info);
-    unsafe { entry.create_instance(&create_info, None) }.map_err(|_| "Couldn't create instance.")
+   unsafe { entry.create_instance(&create_info, None) }.map_err(|_| "Couldn't create instance")
 }
 
 fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice, &'static str> {
@@ -23,7 +22,7 @@ fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice, 
             .map_err(|_| "Couldn't enumerate physical devices.")
     }?
     .into_iter()
-    .next()
+      .next()
     .ok_or_else(|| "No physical devices available.")
 }
 
