@@ -8,7 +8,10 @@ use std::time;
 use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::WindowBuilder};
 
 fn create_instance(entry: &ash::Entry) -> Result<ash::Instance, &'static str> {
-    let application_info = vk::ApplicationInfo::builder().api_version(vk::API_VERSION_1_3);
+    let application_info = vk::ApplicationInfo::builder()
+        .api_version(vk::API_VERSION_1_3)
+        .application_name("cad-rs");
+
     let create_info = vk::InstanceCreateInfo::builder().application_info(&application_info);
     unsafe { entry.create_instance(&create_info, None) }.map_err(|_| "Couldn't create instance.")
 }
@@ -200,7 +203,11 @@ fn run() -> Result<(), &'static str> {
 
     let size_of_buffer = width * height;
     let buffer = create_buffer(&device, size_of_buffer)?;
-    let mut allocation = Some(create_allocation(&device, allocator.as_mut().unwrap(), buffer)?);
+    let mut allocation = Some(create_allocation(
+        &device,
+        allocator.as_mut().unwrap(),
+        buffer,
+    )?);
 
     let command_pool = create_command_pool(&device, queue_family_index)?;
     let command_buffer = create_command_buffer(&device, command_pool)?;
@@ -211,7 +218,6 @@ fn run() -> Result<(), &'static str> {
     let mut red = 0;
     let blue = 125;
     let green = 50;
-
 
     event_loop.run(move |event, _, control_flow| match event {
         winit::event::Event::WindowEvent { window_id, event } => {
@@ -272,8 +278,8 @@ fn run() -> Result<(), &'static str> {
             unsafe { device.destroy_command_pool(command_pool, None) }
 
             allocator
-              .as_mut()
-              .unwrap()
+                .as_mut()
+                .unwrap()
                 .free(allocation.take().unwrap())
                 .unwrap();
             drop(allocator.take().unwrap());
@@ -295,6 +301,4 @@ fn main() {
     if let Err(error_description) = output {
         error!("Error: {}", error_description);
     }
-    info!("Closing down application.");
-
 }
