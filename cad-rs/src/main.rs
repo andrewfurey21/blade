@@ -1,5 +1,5 @@
 #![allow(unused)]
-use ash::{self, vk};
+use ash::vk;
 use bytemuck;
 use gpu_allocator::{vulkan::*, MemoryLocation};
 use log::*;
@@ -8,13 +8,13 @@ use std::time;
 use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::WindowBuilder};
 
 fn create_instance(entry: &ash::Entry) -> Result<ash::Instance, &'static str> {
-   let application_info = vk::ApplicationInfo::builder()
-        .api_version(vk::API_VERSION_1_3);
+    let application_info = vk::ApplicationInfo::builder().api_version(vk::API_VERSION_1_3);
 
     let create_info = vk::InstanceCreateInfo::builder().application_info(&application_info);
-   unsafe { entry.create_instance(&create_info, None) }.map_err(|_| "Couldn't create instance")
+    unsafe { entry.create_instance(&create_info, None) }.map_err(|_| "Couldn't create instance")
 }
 
+// TODO: add physical device rating for selecting gpus
 fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice, &'static str> {
     unsafe {
         instance
@@ -22,7 +22,13 @@ fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice, 
             .map_err(|_| "Couldn't enumerate physical devices.")
     }?
     .into_iter()
-      .next()
+    .filter(|physical_device| {
+        let current_features = unsafe { instance.get_physical_device_features(*physical_device) };
+        let current_properties =
+            unsafe { instance.get_physical_device_properties(*physical_device) };
+        current_features.sample_rate_shading != 0 // && current_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU
+    })
+    .next()
     .ok_or_else(|| "No physical devices available.")
 }
 
