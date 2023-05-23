@@ -14,7 +14,7 @@ fn create_instance(entry: &ash::Entry) -> Result<ash::Instance, &'static str> {
     unsafe { entry.create_instance(&create_info, None) }.map_err(|_| "Couldn't create instance")
 }
 
-// TODO: add physical device rating for selecting gpus
+// TODO: add physical device rating for selecting gpus, add checking for graphics bit
 fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice, &'static str> {
     unsafe {
         instance
@@ -49,8 +49,9 @@ fn choose_queue_family_index(
             .collect::<Vec<_>>();
 
     queue_family_properties
-        .first()
+        .into_iter()
         .map(|enumerated_queue| enumerated_queue.0)
+        .next()
         .ok_or_else(|| "Couldn't return queue family index")
 }
 
@@ -288,8 +289,6 @@ fn run() -> Result<(), &'static str> {
         }
         _ => {}
     });
-
-    Ok(())
 }
 
 fn main() {
