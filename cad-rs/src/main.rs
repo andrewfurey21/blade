@@ -36,7 +36,7 @@ fn choose_queue_family_index(
     instance: &ash::Instance,
     physical_device: vk::PhysicalDevice,
 ) -> Result<usize, &'static str> {
-    let mut queue_family_properties =
+   let mut queue_family_properties =
         unsafe { instance.get_physical_device_queue_family_properties(physical_device) }
             .into_iter()
             .enumerate()
@@ -48,12 +48,6 @@ fn choose_queue_family_index(
             })
             .collect::<Vec<_>>();
 
-    queue_family_properties.sort_by_key(|queue_family_property| {
-        (
-            queue_family_property.1.queue_flags.as_raw().count_ones(),
-            queue_family_property.1.queue_count,
-        )
-    });
     queue_family_properties
         .first()
         .map(|enumerated_queue| enumerated_queue.0)
