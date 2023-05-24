@@ -38,6 +38,11 @@ fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice, 
     }?
     .into_iter()
     .filter(|physical_device| {
+        //let extension_properties =
+        //    unsafe { instance.enumerate_device_extension_properties(*physical_device) }
+        //.expect("Couldn't get extension properties.").into_iter().filter(|property| {
+        //    CStr::from_ptr(property.extension_name).to_str() == "VK_KHR_swapchain"
+        //});
         let current_features = unsafe { instance.get_physical_device_features(*physical_device) };
         let current_properties =
             unsafe { instance.get_physical_device_properties(*physical_device) };
@@ -261,76 +266,76 @@ fn run() -> Result<(), &'static str> {
     let blue = 125;
     let green = 50;
 
-    //    event_loop.run(move |event, _, control_flow| match event {
-    //        winit::event::Event::WindowEvent { window_id, event } => {
-    //            if window_id == window.id() {
-    //                if let winit::event::WindowEvent::CloseRequested = event {
-    //                    control_flow.set_exit();
-    //                }
-    //            }
-    //        }
-    //        winit::event::Event::MainEventsCleared => {
-    //            let start = time::Instant::now();
-    //            t += 0.001;
-    //            red = ((t.sin() * 0.5 + 0.5) * 255.0) as u32;
-    //
-    //            unsafe { device.wait_for_fences(std::slice::from_ref(&fence), true, u64::MAX) }
-    //                .unwrap();
-    //
-    //            unsafe { device.reset_fences(std::slice::from_ref(&fence)).unwrap() };
-    //
-    //            let command_begin_info = vk::CommandBufferBeginInfo::builder();
-    //            unsafe {
-    //                device
-    //                    .begin_command_buffer(command_buffer, &command_begin_info)
-    //                    .unwrap()
-    //            };
-    //
-    //            let pixel_value = blue | green << 8 | red << 16;
-    //
-    //            unsafe {
-    //                device.cmd_fill_buffer(
-    //                    command_buffer,
-    //                    buffer,
-    //                    allocation.as_ref().unwrap().offset(),
-    //                    allocation.as_ref().unwrap().size(),
-    //                    pixel_value,
-    //                )
-    //            };
-    //
-    //            unsafe { device.end_command_buffer(command_buffer).unwrap() };
-    //
-    //            let submit_info =
-    //                vk::SubmitInfo::builder().command_buffers(std::slice::from_ref(&command_buffer));
-    //
-    //            unsafe {
-    //                device
-    //                    .queue_submit(queue, std::slice::from_ref(&submit_info), fence)
-    //                    .unwrap()
-    //            };
-    //        }
-    //        winit::event::Event::LoopDestroyed => {
-    //            unsafe {
-    //                surface_fn.destroy_surface(surface, None);
-    //                device.queue_wait_idle(queue).unwrap();
-    //                device.destroy_fence(fence, None);
-    //                device.destroy_command_pool(command_pool, None);
-    //
-    //                device.destroy_buffer(buffer, None);
-    //                device.destroy_device(None);
-    //                instance.destroy_instance(None);
-    //            }
-    //
-    //            allocator
-    //                .as_mut()
-    //                .unwrap()
-    //                .free(allocation.take().unwrap())
-    //                .unwrap();
-    //            drop(allocator.take().unwrap());
-    //
-    //        }
-    //        _ => {}
-    //    });
+    event_loop.run(move |event, _, control_flow| match event {
+        winit::event::Event::WindowEvent { window_id, event } => {
+            if window_id == window.id() {
+                if let winit::event::WindowEvent::CloseRequested = event {
+                    control_flow.set_exit();
+                }
+            }
+        }
+        winit::event::Event::MainEventsCleared => {
+            let start = time::Instant::now();
+            t += 0.001;
+            red = ((t.sin() * 0.5 + 0.5) * 255.0) as u32;
+
+            unsafe { device.wait_for_fences(std::slice::from_ref(&fence), true, u64::MAX) }
+                .unwrap();
+
+            unsafe { device.reset_fences(std::slice::from_ref(&fence)).unwrap() };
+
+            let command_begin_info = vk::CommandBufferBeginInfo::builder();
+            unsafe {
+                device
+                    .begin_command_buffer(command_buffer, &command_begin_info)
+                    .unwrap()
+            };
+
+            let pixel_value = blue | green << 8 | red << 16;
+
+            unsafe {
+                device.cmd_fill_buffer(
+                    command_buffer,
+                    buffer,
+                    allocation.as_ref().unwrap().offset(),
+                    allocation.as_ref().unwrap().size(),
+                    pixel_value,
+                )
+            };
+
+            unsafe { device.end_command_buffer(command_buffer).unwrap() };
+
+            let submit_info =
+                vk::SubmitInfo::builder().command_buffers(std::slice::from_ref(&command_buffer));
+
+            unsafe {
+                device
+                    .queue_submit(queue, std::slice::from_ref(&submit_info), fence)
+                    .unwrap()
+            };
+        }
+        winit::event::Event::LoopDestroyed => {
+            unsafe {
+                surface_fn.destroy_surface(surface, None);
+                device.queue_wait_idle(queue).unwrap();
+                device.destroy_fence(fence, None);
+                device.destroy_command_pool(command_pool, None);
+
+                device.destroy_buffer(buffer, None);
+                device.destroy_device(None);
+                instance.destroy_instance(None);
+            }
+
+            allocator
+                .as_mut()
+                .unwrap()
+                .free(allocation.take().unwrap())
+                .unwrap();
+            drop(allocator.take().unwrap());
+        }
+        _ => {}
+    });
+
     Ok(())
 }
 
