@@ -7,10 +7,25 @@ use std::ffi::c_char;
 use std::time;
 use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::Window, window::WindowBuilder};
 
-fn create_instance(entry: &ash::Entry) -> Result<ash::Instance, &'static str> {
-    let application_info = vk::ApplicationInfo::builder().api_version(vk::API_VERSION_1_3);
+fn get_surface_extensions(
+    event_loop: &EventLoop<()>,
+) -> Result<&'static [*const c_char], &'static str> {
+    ash_window::enumerate_required_extensions(event_loop.raw_display_handle())
+        .map_err(|_| "Couldn't enumerate required extensions")
+}
 
-    let create_info = vk::InstanceCreateInfo::builder().application_info(&application_info);
+fn create_instance(
+    entry: &ash::Entry,
+    extension_names: Option<&'static [*const c_char]>,
+) -> Result<ash::Instance, &'static str> {
+    let application_info = vk::ApplicationInfo::builder().api_version(vk::API_VERSION_1_3);
+    let create_info = if let Some(ext_names) = extension_names {
+        vk::InstanceCreateInfo::builder()
+            .application_info(&application_info)
+            .enabled_extension_names(ext_names)
+    } else {
+        vk::InstanceCreateInfo::builder().application_info(&application_info)
+    };
     unsafe { entry.create_instance(&create_info, None) }.map_err(|_| "Couldn't create instance")
 }
 
@@ -86,12 +101,6 @@ struct SwapchainSupportDetails {
     formats: Vec<vk::SurfaceFormatKHR>,
     present_modes: Vec<vk::PresentModeKHR>,
 }
-
-//fn create_swapchain() -> khr::Swapchain {
-//   vk::SwapchainCreateInfoKHR::builder()
-//      .
-//
-//}
 
 fn create_allocator(
     instance: &ash::Instance,
@@ -184,13 +193,6 @@ fn create_fence(device: &ash::Device) -> Result<vk::Fence, &'static str> {
     unsafe { device.create_fence(&create_info, None) }.map_err(|_| "Couldn't create fence.")
 }
 
-fn get_surface_extensions(
-    event_loop: &EventLoop<()>,
-) -> Result<&'static [*const c_char], &'static str> {
-    ash_window::enumerate_required_extensions(event_loop.raw_display_handle())
-        .map_err(|_| "Couldn't enumerate required extensions")
-}
-
 fn create_surface(
     entry: &ash::Entry,
     instance: &ash::Instance,
@@ -224,12 +226,13 @@ fn run() -> Result<(), &'static str> {
         .map_err(|_| "Couldn't create window.")?;
 
     let entry = unsafe { ash::Entry::load() }.map_err(|_| "Couldn't create Vulkan entry.")?;
+
     let surface_extensions = get_surface_extensions(&event_loop)?;
-    let instance = create_instance(&entry)?;
+    let instance = create_instance(&entry, Some(surface_extensions))?;
 
     let surface = create_surface(&entry, &instance, &window)?;
-    //let surface_fn = ash::extensions::khr::Surface::new(&entry, &instance);
-    //println!("surface: {surface:?}");
+    let surface_fn = ash::extensions::khr::Surface::new(&entry, &instance);
+    println!("surface: {surface:?}");
 
     let physical_device = pick_physical_device(&instance)?;
 
@@ -258,76 +261,76 @@ fn run() -> Result<(), &'static str> {
     let blue = 125;
     let green = 50;
 
-//    event_loop.run(move |event, _, control_flow| match event {
-//        winit::event::Event::WindowEvent { window_id, event } => {
-//            if window_id == window.id() {
-//                if let winit::event::WindowEvent::CloseRequested = event {
-//                    control_flow.set_exit();
-//                }
-//            }
-//        }
-//        winit::event::Event::MainEventsCleared => {
-//            let start = time::Instant::now();
-//            t += 0.001;
-//            red = ((t.sin() * 0.5 + 0.5) * 255.0) as u32;
-//
-//            unsafe { device.wait_for_fences(std::slice::from_ref(&fence), true, u64::MAX) }
-//                .unwrap();
-//
-//            unsafe { device.reset_fences(std::slice::from_ref(&fence)).unwrap() };
-//
-//            let command_begin_info = vk::CommandBufferBeginInfo::builder();
-//            unsafe {
-//                device
-//                    .begin_command_buffer(command_buffer, &command_begin_info)
-//                    .unwrap()
-//            };
-//
-//            let pixel_value = blue | green << 8 | red << 16;
-//
-//            unsafe {
-//                device.cmd_fill_buffer(
-//                    command_buffer,
-//                    buffer,
-//                    allocation.as_ref().unwrap().offset(),
-//                    allocation.as_ref().unwrap().size(),
-//                    pixel_value,
-//                )
-//            };
-//
-//            unsafe { device.end_command_buffer(command_buffer).unwrap() };
-//
-//            let submit_info =
-//                vk::SubmitInfo::builder().command_buffers(std::slice::from_ref(&command_buffer));
-//
-//            unsafe {
-//                device
-//                    .queue_submit(queue, std::slice::from_ref(&submit_info), fence)
-//                    .unwrap()
-//            };
-//        }
-//        winit::event::Event::LoopDestroyed => {
-//            unsafe {
-//                surface_fn.destroy_surface(surface, None);
-//                device.queue_wait_idle(queue).unwrap();
-//                device.destroy_fence(fence, None);
-//                device.destroy_command_pool(command_pool, None);
-//
-//                device.destroy_buffer(buffer, None);
-//                device.destroy_device(None);
-//                instance.destroy_instance(None);
-//            }
-//
-//            allocator
-//                .as_mut()
-//                .unwrap()
-//                .free(allocation.take().unwrap())
-//                .unwrap();
-//            drop(allocator.take().unwrap());
-//
-//        }
-//        _ => {}
-//    });
+    //    event_loop.run(move |event, _, control_flow| match event {
+    //        winit::event::Event::WindowEvent { window_id, event } => {
+    //            if window_id == window.id() {
+    //                if let winit::event::WindowEvent::CloseRequested = event {
+    //                    control_flow.set_exit();
+    //                }
+    //            }
+    //        }
+    //        winit::event::Event::MainEventsCleared => {
+    //            let start = time::Instant::now();
+    //            t += 0.001;
+    //            red = ((t.sin() * 0.5 + 0.5) * 255.0) as u32;
+    //
+    //            unsafe { device.wait_for_fences(std::slice::from_ref(&fence), true, u64::MAX) }
+    //                .unwrap();
+    //
+    //            unsafe { device.reset_fences(std::slice::from_ref(&fence)).unwrap() };
+    //
+    //            let command_begin_info = vk::CommandBufferBeginInfo::builder();
+    //            unsafe {
+    //                device
+    //                    .begin_command_buffer(command_buffer, &command_begin_info)
+    //                    .unwrap()
+    //            };
+    //
+    //            let pixel_value = blue | green << 8 | red << 16;
+    //
+    //            unsafe {
+    //                device.cmd_fill_buffer(
+    //                    command_buffer,
+    //                    buffer,
+    //                    allocation.as_ref().unwrap().offset(),
+    //                    allocation.as_ref().unwrap().size(),
+    //                    pixel_value,
+    //                )
+    //            };
+    //
+    //            unsafe { device.end_command_buffer(command_buffer).unwrap() };
+    //
+    //            let submit_info =
+    //                vk::SubmitInfo::builder().command_buffers(std::slice::from_ref(&command_buffer));
+    //
+    //            unsafe {
+    //                device
+    //                    .queue_submit(queue, std::slice::from_ref(&submit_info), fence)
+    //                    .unwrap()
+    //            };
+    //        }
+    //        winit::event::Event::LoopDestroyed => {
+    //            unsafe {
+    //                surface_fn.destroy_surface(surface, None);
+    //                device.queue_wait_idle(queue).unwrap();
+    //                device.destroy_fence(fence, None);
+    //                device.destroy_command_pool(command_pool, None);
+    //
+    //                device.destroy_buffer(buffer, None);
+    //                device.destroy_device(None);
+    //                instance.destroy_instance(None);
+    //            }
+    //
+    //            allocator
+    //                .as_mut()
+    //                .unwrap()
+    //                .free(allocation.take().unwrap())
+    //                .unwrap();
+    //            drop(allocator.take().unwrap());
+    //
+    //        }
+    //        _ => {}
+    //    });
     Ok(())
 }
 
@@ -339,4 +342,5 @@ fn main() {
     if let Err(error_description) = output {
         error!("Error: {}", error_description);
     }
+    info!("Exiting application.");
 }
