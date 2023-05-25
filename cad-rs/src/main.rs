@@ -7,6 +7,11 @@ use std::ffi::c_char;
 use std::time;
 use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::Window, window::WindowBuilder};
 
+struct SurfaceDetails {
+    surface_fn: ash::extensions::khr::Surface,
+    surface: vk::SurfaceKHR,
+}
+
 fn get_surface_extensions(
     event_loop: &EventLoop<()>,
 ) -> Result<&'static [*const c_char], &'static str> {
@@ -55,6 +60,7 @@ fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice, 
 fn choose_queue_family_index(
     instance: &ash::Instance,
     physical_device: vk::PhysicalDevice,
+    surface_details: &SurfaceDetails,
 ) -> Result<usize, &'static str> {
     let mut queue_family_properties =
         unsafe { instance.get_physical_device_queue_family_properties(physical_device) }
@@ -70,6 +76,16 @@ fn choose_queue_family_index(
 
     queue_family_properties
         .into_iter()
+        .filter(|enumerated_queue| unsafe {
+            surface_details
+                .surface_fn
+                .get_physical_device_surface_support(
+                    physical_device,
+                    enumerated_queue.0 as u32,
+                    surface_details.surface,
+                )
+                .unwrap()
+        })
         .map(|enumerated_queue| enumerated_queue.0)
         .next()
         .ok_or_else(|| "Couldn't return queue family index")
@@ -235,13 +251,18 @@ fn run() -> Result<(), &'static str> {
     let surface_extensions = get_surface_extensions(&event_loop)?;
     let instance = create_instance(&entry, Some(surface_extensions))?;
 
+    // TODO:    Refactor into SurfaceDetails::new()
     let surface = create_surface(&entry, &instance, &window)?;
     let surface_fn = ash::extensions::khr::Surface::new(&entry, &instance);
-    println!("surface: {surface:?}");
+    let surface_details = SurfaceDetails {
+        surface_fn,
+        surface,
+    };
 
     let physical_device = pick_physical_device(&instance)?;
 
-    let queue_family_index = choose_queue_family_index(&instance, physical_device)? as u32;
+    let queue_family_index =
+        choose_queue_family_index(&instance, physical_device, &surface_details)? as u32;
     let device = create_logical_device(&instance, physical_device, queue_family_index)?;
 
     let queue = get_queue_at_index(&device, queue_family_index);
@@ -316,7 +337,7 @@ fn run() -> Result<(), &'static str> {
         }
         winit::event::Event::LoopDestroyed => {
             unsafe {
-                surface_fn.destroy_surface(surface, None);
+                surface_details.surface_fn.destroy_surface(surface, None);
                 device.queue_wait_idle(queue).unwrap();
                 device.destroy_fence(fence, None);
                 device.destroy_command_pool(command_pool, None);
