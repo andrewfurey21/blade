@@ -176,7 +176,7 @@ impl SwapchainSupportDetails {
     fn choose_surface_present_mode(&self) -> Result<vk::PresentModeKHR, &'static str> {
         // mailbox more energy consumption, fifo better on small devices
         for present_mode in &self.present_modes {
-            if present_mode == vk::PresentModeKHR::MAILBOX {
+            if *present_mode == vk::PresentModeKHR::MAILBOX {
                 return Ok(*present_mode);
             }
         }
@@ -290,6 +290,78 @@ fn create_surface(
         )
         .map_err(|_| "Couldn't create surface")
     }
+}
+
+fn choose_swapchain_extent(
+    capabilities: &vk::SurfaceCapabilitiesKHR,
+    old_width: u32,
+    old_height: u32,
+) -> Result<vk::Extent2D, &'static str> {
+    if (capabilities.current_extent.width != u32::MAX) {
+        return Ok(capabilities.current_extent);
+    } else {
+        let width = num::clamp(
+            old_width,
+            capabilities.min_image_extent.width,
+            capabilities.max_image_extent.width,
+        );
+
+        let height = num::clamp(
+            old_height,
+            capabilities.min_image_extent.height,
+            capabilities.max_image_extent.height,
+        );
+        return Ok(vk::Extent2D { width, height });
+    }
+}
+
+fn create_swapchain(
+    instance: &ash::Instance,
+    device: &ash::Device,
+    physical_device: vk::PhysicalDevice,
+    surface_details: &SurfaceDetails,
+    width: u32,
+    height: u32,
+) -> Result<vk::SwapchainKHR, &'static str> {
+    let swapchain_support_details = SwapchainSupportDetails::new(physical_device, surface_details)?;
+    let format = swapchain_support_details.choose_surface_format()?;
+    let present_mode = swapchain_support_details.choose_surface_present_mode()?;
+    let extent = choose_swapchain_extent(&swapchain_support_details.capabilities, width, height)?;
+
+    let image_count = {
+        let image_count = swapchain_support_details.capabilities.min_image_count + 1;
+        if swapchain_support_details.capabilities.max_image_count > 0
+            && image_count <= swapchain_support_details.capabilities.max_image_count
+        {
+            image_count
+        } else {
+            swapchain_support_details.capabilities.max_image_count
+        }
+    };
+
+    let swapchain_create_info = vk::SwapchainCreateInfoKHR::builder()
+        .surface(surface_details.surface)
+        .min_image_count(image_count)
+        .image_format(format.format)
+        .image_color_space(format.color_space)
+        .image_extent(extent)
+        .image_array_layers(1)
+        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+        .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+        .pre_transform(swapchain_support_details.capabilities.current_transform)
+        .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+        .present_mode(present_mode)
+        .clipped(true)
+        .old_swapchain(vk::SwapchainKHR::null());
+
+    let swapchain_fn = ash::extensions::khr::Swapchain::new(instance, device);
+
+    let swapchain = unsafe {
+        swapchain_fn
+            .create_swapchain(&swapchain_create_info, None)
+            .map_err(|_| "Couldn't create swapchain")
+    };
+    swapchain
 }
 
 fn run() -> Result<(), &'static str> {
