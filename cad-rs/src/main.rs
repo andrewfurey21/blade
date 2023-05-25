@@ -43,6 +43,7 @@ fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice, 
     }?
     .into_iter()
     .filter(|physical_device| {
+        //TODO: fix checking for swapchain extension
         //let extension_properties =
         //    unsafe { instance.enumerate_device_extension_properties(*physical_device) }
         //.expect("Couldn't get extension properties.").into_iter().filter(|property| {
@@ -62,6 +63,12 @@ fn choose_queue_family_index(
     physical_device: vk::PhysicalDevice,
     surface_details: &SurfaceDetails,
 ) -> Result<usize, &'static str> {
+    let swapchain_support_details = SwapchainSupportDetails::new(physical_device, surface_details)?;
+    if swapchain_support_details.formats.len() == 0
+        || swapchain_support_details.present_modes.len() == 0
+    {
+        return Err("Not enough formats and/or present modes");
+    }
     let mut queue_family_properties =
         unsafe { instance.get_physical_device_queue_family_properties(physical_device) }
             .into_iter()
@@ -74,6 +81,7 @@ fn choose_queue_family_index(
             })
             .collect::<Vec<_>>();
 
+    // TODO: use filter_map instead
     queue_family_properties
         .into_iter()
         .filter(|enumerated_queue| unsafe {
@@ -121,6 +129,59 @@ struct SwapchainSupportDetails {
     capabilities: vk::SurfaceCapabilitiesKHR,
     formats: Vec<vk::SurfaceFormatKHR>,
     present_modes: Vec<vk::PresentModeKHR>,
+}
+
+impl SwapchainSupportDetails {
+    fn new(
+        physical_device: vk::PhysicalDevice,
+        surface_details: &SurfaceDetails,
+    ) -> Result<Self, &'static str> {
+        unsafe {
+            let capabilities = surface_details
+                .surface_fn
+                .get_physical_device_surface_capabilities(physical_device, surface_details.surface)
+                .map_err(|_| "Couldn't get physical device surface capabilities")?;
+            let present_modes = surface_details
+                .surface_fn
+                .get_physical_device_surface_present_modes(physical_device, surface_details.surface)
+                .map_err(|_| "Couldn't get physical device surface present modes")?;
+            let formats = surface_details
+                .surface_fn
+                .get_physical_device_surface_formats(physical_device, surface_details.surface)
+                .map_err(|_| "Couldn't get physical device surface formats")?;
+
+            Ok(SwapchainSupportDetails {
+                capabilities,
+                formats,
+                present_modes,
+            })
+        }
+    }
+
+    fn choose_surface_format(&self) -> Result<vk::SurfaceFormatKHR, &'static str> {
+        if (self.formats.len() == 0) {
+            return Err("Not enough formats");
+        }
+
+        for format in &self.formats {
+            if format.format == vk::Format::R8G8B8A8_SRGB
+                && format.color_space == vk::ColorSpaceKHR::EXTENDED_SRGB_NONLINEAR_EXT
+            {
+                return Ok(*format);
+            }
+        }
+        Ok(self.formats[0])
+    }
+
+    fn choose_surface_present_mode(&self) -> Result<vk::PresentModeKHR, &'static str> {
+        // mailbox more energy consumption, fifo better on small devices
+        for present_mode in &self.present_modes {
+            if present_mode == vk::PresentModeKHR::MAILBOX {
+                return Ok(*present_mode);
+            }
+        }
+        Ok(vk::PresentModeKHR::FIFO)
+    }
 }
 
 fn create_allocator(
