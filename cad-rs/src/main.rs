@@ -315,6 +315,19 @@ fn choose_swapchain_extent(
     }
 }
 
+fn get_image_count(physical_device: vk::PhysicalDevice, surface_details: &SurfaceDetails) -> u32 {
+    let swapchain_support_details =
+        SwapchainSupportDetails::new(physical_device, surface_details).unwrap();
+    let image_count = swapchain_support_details.capabilities.min_image_count + 1;
+    if swapchain_support_details.capabilities.max_image_count > 0
+        && image_count <= swapchain_support_details.capabilities.max_image_count
+    {
+        image_count
+    } else {
+        swapchain_support_details.capabilities.max_image_count
+    }
+}
+
 fn create_swapchain(
     instance: &ash::Instance,
     device: &ash::Device,
@@ -328,16 +341,7 @@ fn create_swapchain(
     let present_mode = swapchain_support_details.choose_surface_present_mode()?;
     let extent = choose_swapchain_extent(&swapchain_support_details.capabilities, width, height)?;
 
-    let image_count = {
-        let image_count = swapchain_support_details.capabilities.min_image_count + 1;
-        if swapchain_support_details.capabilities.max_image_count > 0
-            && image_count <= swapchain_support_details.capabilities.max_image_count
-        {
-            image_count
-        } else {
-            swapchain_support_details.capabilities.max_image_count
-        }
-    };
+    let image_count = get_image_count(physical_device, surface_details);
 
     let swapchain_create_info = vk::SwapchainCreateInfoKHR::builder()
         .surface(surface_details.surface)
