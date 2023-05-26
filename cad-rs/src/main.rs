@@ -400,6 +400,15 @@ fn run() -> Result<(), &'static str> {
 
     let queue = get_queue_at_index(&device, queue_family_index);
 
+    let swapchain = create_swapchain(
+        &instance,
+        &device,
+        physical_device,
+        &surface_details,
+        width,
+        height,
+    )?;
+
     let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
 
     let size_of_buffer = width * height;
@@ -470,6 +479,9 @@ fn run() -> Result<(), &'static str> {
         }
         winit::event::Event::LoopDestroyed => {
             unsafe {
+                let swapchain_fn = ash::extensions::khr::Swapchain::new(&instance, &device);
+                swapchain_fn.destroy_swapchain(swapchain, None);
+
                 surface_details.surface_fn.destroy_surface(surface, None);
                 device.queue_wait_idle(queue).unwrap();
                 device.destroy_fence(fence, None);
