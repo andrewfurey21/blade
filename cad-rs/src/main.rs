@@ -368,6 +368,19 @@ fn create_swapchain(
     swapchain
 }
 
+fn get_swapchain_images(
+    instance: &ash::Instance,
+    device: &ash::Device,
+    swapchain: vk::SwapchainKHR,
+) -> Result<Vec<vk::Image>, &'static str> {
+    let swapchain_fn = ash::extensions::khr::Swapchain::new(instance, device);
+    unsafe {
+        swapchain_fn
+            .get_swapchain_images(swapchain)
+            .map_err(|_| "Couldn't get swapchain images")
+    }
+}
+
 fn run() -> Result<(), &'static str> {
     let width: u32 = 400;
     let height: u32 = 400;
@@ -404,6 +417,9 @@ fn run() -> Result<(), &'static str> {
 
     let queue = get_queue_at_index(&device, queue_family_index);
 
+    let swapchain_fn = ash::extensions::khr::Swapchain::new(&instance, &device);
+
+    //TODO: idea, create_swapchain maybe return tuple of swapchain and image count?
     let swapchain = create_swapchain(
         &instance,
         &device,
@@ -412,6 +428,8 @@ fn run() -> Result<(), &'static str> {
         width,
         height,
     )?;
+
+    let swapchain_images = get_swapchain_images(&instance, &device, swapchain);
 
     let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
 
@@ -483,7 +501,6 @@ fn run() -> Result<(), &'static str> {
         }
         winit::event::Event::LoopDestroyed => {
             unsafe {
-                let swapchain_fn = ash::extensions::khr::Swapchain::new(&instance, &device);
                 swapchain_fn.destroy_swapchain(swapchain, None);
 
                 surface_details.surface_fn.destroy_surface(surface, None);
