@@ -327,12 +327,18 @@ fn get_image_count(physical_device: vk::PhysicalDevice, surface_details: &Surfac
     let swapchain_support_details =
         SwapchainSupportDetails::new(physical_device, surface_details).unwrap();
     let image_count = swapchain_support_details.capabilities.min_image_count + 1;
-    if swapchain_support_details.capabilities.max_image_count > 0
-        && image_count <= swapchain_support_details.capabilities.max_image_count
-    {
-        image_count
+    println!(
+        "max image count {}",
+        swapchain_support_details.capabilities.min_image_count
+    );
+
+    if swapchain_support_details.capabilities.max_image_count > 0 {
+        return std::cmp::min(
+            swapchain_support_details.capabilities.max_image_count,
+            image_count,
+        );
     } else {
-        swapchain_support_details.capabilities.max_image_count
+        return image_count;
     }
 }
 
@@ -350,6 +356,7 @@ fn create_swapchain(
     let extent = choose_swapchain_extent(&swapchain_support_details.capabilities, width, height)?;
 
     let image_count = get_image_count(physical_device, surface_details);
+    println!("Image count: {}", image_count);
 
     let swapchain_create_info = vk::SwapchainCreateInfoKHR::builder()
         .surface(surface_details.surface)
@@ -438,7 +445,7 @@ fn run() -> Result<(), &'static str> {
     )?;
 
     let swapchain_images = get_swapchain_images(&instance, &device, swapchain)?;
-    //    println!("{}", swapchain_images.len());
+    println!("{}", swapchain_images.len());
 
     let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
 
