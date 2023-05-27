@@ -7,6 +7,8 @@ use std::ffi::c_char;
 use std::time;
 use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::Window, window::WindowBuilder};
 
+const EXTENSIONS: [&'static str; 1] = ["VK_KHR_swapchain"];
+
 struct SurfaceDetails {
     surface_fn: ash::extensions::khr::Surface,
     surface: vk::SurfaceKHR,
@@ -19,6 +21,7 @@ fn get_surface_extensions(
         .map_err(|_| "Couldn't enumerate required extensions")
 }
 
+// TODO: fix extensions vec
 fn create_instance(
     entry: &ash::Entry,
     extension_names: Option<&'static [*const c_char]>,
@@ -44,11 +47,13 @@ fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice, 
     .into_iter()
     .filter(|physical_device| {
         //TODO: fix checking for swapchain extension
-        //let extension_properties =
-        //    unsafe { instance.enumerate_device_extension_properties(*physical_device) }
-        //.expect("Couldn't get extension properties.").into_iter().filter(|property| {
-        //    CStr::from_ptr(property.extension_name).to_str() == "VK_KHR_swapchain"
-        //});
+        // let extension_properties =
+        //     unsafe { instance.enumerate_device_extension_properties(*physical_device) }
+        //         .map_err(|_| "Couldn't enumerate device extension properties")
+        //         .unwrap();
+        // for property in extension_properties {
+        //     println!("{:?}", property);
+        // }
         let current_features = unsafe { instance.get_physical_device_features(*physical_device) };
         let current_properties =
             unsafe { instance.get_physical_device_properties(*physical_device) };
@@ -109,8 +114,11 @@ fn create_logical_device(
         .queue_family_index(queue_family_index)
         .queue_priorities(&priorities);
 
+    let extensions = [ash::extensions::khr::Swapchain::name().as_ptr()];
+
     let create_info = vk::DeviceCreateInfo::builder()
-        .queue_create_infos(std::slice::from_ref(&queue_create_info));
+        .queue_create_infos(std::slice::from_ref(&queue_create_info))
+        .enabled_extension_names(&extensions);
 
     let instance = unsafe {
         instance
@@ -429,7 +437,8 @@ fn run() -> Result<(), &'static str> {
         height,
     )?;
 
-    let swapchain_images = get_swapchain_images(&instance, &device, swapchain);
+    let swapchain_images = get_swapchain_images(&instance, &device, swapchain)?;
+    //    println!("{}", swapchain_images.len());
 
     let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
 
