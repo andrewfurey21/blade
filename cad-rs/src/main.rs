@@ -327,10 +327,6 @@ fn get_image_count(physical_device: vk::PhysicalDevice, surface_details: &Surfac
     let swapchain_support_details =
         SwapchainSupportDetails::new(physical_device, surface_details).unwrap();
     let image_count = swapchain_support_details.capabilities.min_image_count + 1;
-    println!(
-        "max image count {}",
-        swapchain_support_details.capabilities.min_image_count
-    );
 
     if swapchain_support_details.capabilities.max_image_count > 0 {
         return std::cmp::min(
@@ -351,12 +347,12 @@ fn create_swapchain(
     height: u32,
 ) -> Result<vk::SwapchainKHR, &'static str> {
     let swapchain_support_details = SwapchainSupportDetails::new(physical_device, surface_details)?;
-    let format = swapchain_support_details.choose_surface_format()?;
     let present_mode = swapchain_support_details.choose_surface_present_mode()?;
+
+    let format = swapchain_support_details.choose_surface_format()?;
     let extent = choose_swapchain_extent(&swapchain_support_details.capabilities, width, height)?;
 
     let image_count = get_image_count(physical_device, surface_details);
-    println!("Image count: {}", image_count);
 
     let swapchain_create_info = vk::SwapchainCreateInfoKHR::builder()
         .surface(surface_details.surface)
@@ -394,6 +390,44 @@ fn get_swapchain_images(
             .get_swapchain_images(swapchain)
             .map_err(|_| "Couldn't get swapchain images")
     }
+}
+
+//TODO: fix error handling
+fn create_image_views(
+    device: &ash::Device,
+    swapchain_images: &Vec<vk::Image>,
+    format: vk::Format,
+) -> Result<Vec<vk::ImageView>, &'static str> {
+    let error = format!("Couldn't create image view").as_str();
+    let mut image_views: Vec<vk::ImageView> = vec![];
+    for i in 0..swapchain_images.len() {
+        let component_mapping = vk::ComponentMapping::builder()
+            .r(vk::ComponentSwizzle::IDENTITY)
+            .g(vk::ComponentSwizzle::IDENTITY)
+            .b(vk::ComponentSwizzle::IDENTITY)
+            .a(vk::ComponentSwizzle::IDENTITY)
+            .build();
+
+        let subresource_range = vk::ImageSubresourceRange::builder()
+            .aspect_mask(vk::ImageAspectFlags::COLOR)
+            .base_mip_level(0)
+            .level_count(1)
+            .base_array_layer(0)
+            .layer_count(1)
+            .build();
+
+        let image_view_create_info = vk::ImageViewCreateInfo::builder()
+            .image(swapchain_images[i])
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(format)
+            .components(component_mapping)
+            .subresource_range(subresource_range)
+            .build();
+
+        image_views
+            .push(unsafe { device.create_image_view(&image_view_create_info, None) }.unwrap());
+    }
+    Ok(image_views)
 }
 
 fn run() -> Result<(), &'static str> {
@@ -445,7 +479,14 @@ fn run() -> Result<(), &'static str> {
     )?;
 
     let swapchain_images = get_swapchain_images(&instance, &device, swapchain)?;
-    println!("{}", swapchain_images.len());
+
+    let swapchain_support_details =
+        SwapchainSupportDetails::new(physical_device, &surface_details)?;
+    let swapchain_extent =
+        choose_swapchain_extent(&swapchain_support_details.capabilities, width, height)?;
+    let swapchain_image_format = swapchain_support_details.choose_surface_format()?;
+
+    let image_views = create_image_views(&device, &swapchain_images, swapchain_image_format.format);
 
     let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
 
