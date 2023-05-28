@@ -6,8 +6,8 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::ffi::c_char;
 use std::time;
 use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::Window, window::WindowBuilder};
+use std::io::prelude::*;
 
-const EXTENSIONS: [&'static str; 1] = ["VK_KHR_swapchain"];
 
 struct SurfaceDetails {
     surface_fn: ash::extensions::khr::Surface,
@@ -430,6 +430,19 @@ fn create_image_views(
     Ok(image_views)
 }
 
+fn create_shader_module(device: &ash::Device, file_name: &'static str) -> Result<vk::ShaderModule, &'static str> {
+    //TODO: check for spv file using file method
+    let path = std::path::Path::new(file_name);
+    let file = std::fs::File::open(path).expect(&format!("Couldn't open file at {}", file_name));
+    let bytes = std::io::BufReader::new(file).bytes().flatten().map(|n| n as u32).collect::<Vec<_>>();
+
+    let create_info = vk::ShaderModuleCreateInfo::builder().code(bytes.as_slice());
+
+    unsafe {
+        device.create_shader_module(&create_info, None).map_err(|_| "Couldn't create shader module.")
+    }
+}
+
 fn run() -> Result<(), &'static str> {
     let width: u32 = 400;
     let height: u32 = 400;
@@ -487,6 +500,9 @@ fn run() -> Result<(), &'static str> {
     let swapchain_image_format = swapchain_support_details.choose_surface_format()?;
 
     let image_views = create_image_views(&device, &swapchain_images, swapchain_image_format.format);
+
+    let vertex_module = create_shader_module(&device, "../shaders/vert.spv");
+    let frag_module = create_shader_module(&device, "../shaders/vert.spv");
 
     let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
 
@@ -556,6 +572,7 @@ fn run() -> Result<(), &'static str> {
                     .unwrap()
             };
         }
+        //TODO: do an impl Drop instead
         winit::event::Event::LoopDestroyed => {
             unsafe {
                 swapchain_fn.destroy_swapchain(swapchain, None);
@@ -585,6 +602,7 @@ fn run() -> Result<(), &'static str> {
 
 fn main() {
     env_logger::init();
+
     info!("Starting up application...");
 
     let output = run();
