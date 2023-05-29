@@ -552,6 +552,40 @@ fn create_pipeline_layout(device: &ash::Device) -> Result<vk::PipelineLayout, &'
     }
 }
 
+fn create_render_pass(
+    device: &ash::Device,
+    swapchain_image_format: &vk::Format,
+) -> Result<vk::RenderPass, &'static str> {
+    let attachment_description = vk::AttachmentDescription::builder()
+        .format(*swapchain_image_format)
+        .samples(vk::SampleCountFlags::TYPE_1)
+        .load_op(vk::AttachmentLoadOp::CLEAR)
+        .store_op(vk::AttachmentStoreOp::STORE)
+        .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+        .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+        .initial_layout(vk::ImageLayout::UNDEFINED)
+        .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+        .build();
+
+    let color_attachment_ref = vk::AttachmentReference::builder()
+        .attachment(0)
+        .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+        .build();
+
+    let subpass = vk::SubpassDescription::builder()
+        .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+        .color_attachments(&[color_attachment_ref])
+        .build();
+
+    let renderpass_info = vk::RenderPassCreateInfo::builder()
+        .attachments(&[attachment_description])
+        .subpasses(&[subpass])
+        .build();
+
+    unsafe { device.create_render_pass(&renderpass_info, None) }
+        .map_err(|_| "Couldn't create render pass")
+}
+
 fn run() -> Result<(), &'static str> {
     let width: u32 = 400;
     let height: u32 = 400;
