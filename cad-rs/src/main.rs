@@ -453,7 +453,11 @@ fn create_shader_module(
     }
 }
 
-fn create_graphics_pipeline(device: &ash::Device, swapchain_extent: vk::Extent2D) {
+fn create_graphics_pipeline(
+    device: &ash::Device,
+    swapchain_extent: &vk::Extent2D,
+    swapchain_image_format: &vk::SurfaceFormatKHR,
+) -> Result<Vec<vk::Pipeline>, &'static str> {
     let vertex_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
     let frag_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
 
@@ -461,12 +465,14 @@ fn create_graphics_pipeline(device: &ash::Device, swapchain_extent: vk::Extent2D
     let vert_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
         .name(binding.as_c_str())
         .stage(vk::ShaderStageFlags::VERTEX)
-        .module(vertex_module);
+        .module(vertex_module)
+        .build();
 
     let frag_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
         .name(binding.as_c_str())
         .stage(vk::ShaderStageFlags::FRAGMENT)
-        .module(frag_module);
+        .module(frag_module)
+        .build();
 
     let shader_stages = [vert_shader_stage, frag_shader_stage];
 
@@ -476,7 +482,7 @@ fn create_graphics_pipeline(device: &ash::Device, swapchain_extent: vk::Extent2D
         vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
 
     let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default();
-    let input_assembly_input = vk::PipelineInputAssemblyStateCreateInfo {
+    let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
         primitive_restart_enable: 0,
         topology: vk::PrimitiveTopology::TRIANGLE_LIST,
         ..Default::default()
@@ -490,7 +496,7 @@ fn create_graphics_pipeline(device: &ash::Device, swapchain_extent: vk::Extent2D
     };
 
     let scissor = vk::Rect2D {
-        extent: swapchain_extent,
+        extent: *swapchain_extent,
         ..Default::default()
     };
 
@@ -500,7 +506,7 @@ fn create_graphics_pipeline(device: &ash::Device, swapchain_extent: vk::Extent2D
         .build();
 
     // most of the other options for each setting requires a gpu feature to be set
-    let rasterizer_create_info = vk::PipelineRasterizationStateCreateInfo::builder()
+    let rasterization_create_info = vk::PipelineRasterizationStateCreateInfo::builder()
         .depth_clamp_enable(false)
         .rasterizer_discard_enable(false)
         .polygon_mode(vk::PolygonMode::FILL)
@@ -539,9 +545,37 @@ fn create_graphics_pipeline(device: &ash::Device, swapchain_extent: vk::Extent2D
         .blend_constants([0.0, 0.0, 0.0, 0.0])
         .build();
 
+    let pipeline_layout = create_pipeline_layout(device)?;
+
+    let render_pass = create_render_pass(&device, &swapchain_image_format.format)?;
+
+    let pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
+        .stages(&shader_stages)
+        .vertex_input_state(&vertex_input_info)
+        .input_assembly_state(&input_assembly_state)
+        .viewport_state(&viewport_state_create_info)
+        .rasterization_state(&rasterization_create_info)
+        .multisample_state(&multisample_state_create_info)
+        .color_blend_state(&color_blend_state_create_info)
+        .dynamic_state(&pipeline_dyn_states)
+        .layout(pipeline_layout)
+        .render_pass(render_pass)
+        .subpass(0)
+        .base_pipeline_handle(vk::Pipeline::null())
+        .base_pipeline_index(-1)
+        .build();
+
     unsafe {
-        device.destroy_shader_module(vertex_module, None);
-        device.destroy_shader_module(frag_module, None);
+        //seg faults
+        //device.destroy_shader_module(vertex_module, None);
+        //device.destroy_shader_module(frag_module, None);
+
+        //device.destroy_render_pass(render_pass, None);
+        //device.destroy_pipeline_layout(pipeline_layout, None);
+
+        device
+            .create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None)
+            .map_err(|_| "Couldn't create graphics pipeline.")
     }
 }
 
@@ -647,8 +681,9 @@ fn run() -> Result<(), &'static str> {
     let image_views = create_image_views(&device, &swapchain_images, swapchain_image_format.format);
 
     //TODO: change from create info to info
-    let pipeline_layout = create_pipeline_layout(&device)?;
-    let render_pass = create_render_pass(&device, &swapchain_image_format.format)?;
+    //
+    let graphics_pipeline =
+        create_graphics_pipeline(&device, &swapchain_extent, &swapchain_image_format);
 
     let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
 
@@ -721,8 +756,6 @@ fn run() -> Result<(), &'static str> {
         //TODO: do an impl Drop instead
         winit::event::Event::LoopDestroyed => {
             unsafe {
-                device.destroy_render_pass(render_pass, None);
-                device.destroy_pipeline_layout(pipeline_layout, None);
                 swapchain_fn.destroy_swapchain(swapchain, None);
 
                 surface_details.surface_fn.destroy_surface(surface, None);
