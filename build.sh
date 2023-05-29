@@ -4,4 +4,4 @@ echo "Building fragment shader"
 glslc shaders/shader.frag -o shaders/frag.spv
 cd cad-rs
 echo "Building project"
-cargo run
+cargo fmt | cargo run
