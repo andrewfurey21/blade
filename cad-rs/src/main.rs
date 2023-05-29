@@ -443,7 +443,7 @@ fn create_shader_module(device: &ash::Device, file_name: &'static str) -> Result
     }
 }
 
-fn create_graphics_pipeline(device: &ash::Device) {
+fn create_graphics_pipeline(device: &ash::Device, swapchain_extent: vk::Extent2D) {
 
     let vertex_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
     let frag_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
@@ -460,6 +460,75 @@ fn create_graphics_pipeline(device: &ash::Device) {
         .module(frag_module);
 
     let shader_stages = [vert_shader_stage, frag_shader_stage];
+
+    // viewport, scissor for now, multiple viewports require setting feature
+    let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+    let pipeline_dyn_states = vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
+
+    let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default();
+    let input_assembly_input = vk::PipelineInputAssemblyStateCreateInfo {
+        primitive_restart_enable: 0,
+        topology: vk::PrimitiveTopology::TRIANGLE_LIST,
+        ..Default::default()
+    };
+
+    let viewport = vk::Viewport {
+        width: swapchain_extent.width as f32,
+        height: swapchain_extent.height as f32,
+        max_depth: 1.0,
+        ..Default::default()
+    };
+
+    let scissor = vk::Rect2D {
+        extent: swapchain_extent,
+        ..Default::default()
+    };
+
+    let viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
+        .viewport_count(1)
+        .scissor_count(1)
+        .build();
+
+    // most of the other options for each setting requires a gpu feature to be set
+    let rasterizer_create_info = vk::PipelineRasterizationStateCreateInfo::builder()
+        .depth_clamp_enable(false)
+        .rasterizer_discard_enable(false)
+        .polygon_mode(vk::PolygonMode::FILL)
+        .line_width(1.0)
+        .cull_mode(vk::CullModeFlags::BACK)
+        .front_face(vk::FrontFace::CLOCKWISE)
+        .depth_bias_enable(false)
+        .build();
+
+    let multisample_state_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
+        .sample_shading_enable(false)
+        .rasterization_samples(vk::SampleCountFlags::TYPE_1)
+        .min_sample_shading(1.0)
+        .alpha_to_coverage_enable(false)
+        .alpha_to_one_enable(false)
+        .build();
+
+    // Depth/stencil testing goes here
+
+    //TODO: fix for coloring based on opacity
+    let color_blend_attachment_state_create_info = vk::PipelineColorBlendAttachmentState::builder()
+        .color_write_mask(vk::ColorComponentFlags::RGBA)
+        .blend_enable(false)
+        .src_color_blend_factor(vk::BlendFactor::ONE)
+        .dst_color_blend_factor(vk::BlendFactor::ZERO)
+        .color_blend_op(vk::BlendOp::ADD)
+        .src_alpha_blend_factor(vk::BlendFactor::ONE)
+        .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+        .alpha_blend_op(vk::BlendOp::ADD)
+        .build();
+
+    let color_blend_state_create_info = vk::PipelineColorBlendStateCreateInfo::builder()
+        .logic_op_enable(false)
+        .logic_op(vk::LogicOp::COPY)
+        .attachments(&[color_blend_attachment_state_create_info])
+        .blend_constants([0.0, 0.0, 0.0, 0.0])
+        .build();
+
 
     unsafe {
         device.destroy_shader_module(vertex_module, None);
@@ -527,6 +596,7 @@ fn run() -> Result<(), &'static str> {
 
     let image_views = create_image_views(&device, &swapchain_images, swapchain_image_format.format);
 
+    let pipeline_layout = vk::PipelineLayoutCreateInfo::default();
 
     let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
 
