@@ -3,10 +3,10 @@ use ash::vk;
 use gpu_allocator::{vulkan::*, MemoryLocation};
 use log::*;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use std::ffi::c_char;
 use std::time;
 use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::Window, window::WindowBuilder};
 use std::io::prelude::*;
+use std::ffi::{c_char, CString, CStr};
 
 
 struct SurfaceDetails {
@@ -443,6 +443,32 @@ fn create_shader_module(device: &ash::Device, file_name: &'static str) -> Result
     }
 }
 
+fn create_graphics_pipeline(device: &ash::Device) {
+
+    let vertex_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
+    let frag_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
+
+    let binding = CString::new("main").expect("Couldn't make c string");
+    let vert_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
+        .name(binding.as_c_str())
+        .stage(vk::ShaderStageFlags::VERTEX)
+        .module(vertex_module);
+
+    let frag_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
+        .name(binding.as_c_str())
+        .stage(vk::ShaderStageFlags::FRAGMENT)
+        .module(frag_module);
+
+    let shader_stages = [vert_shader_stage, frag_shader_stage];
+
+    unsafe {
+        device.destroy_shader_module(vertex_module, None);
+        device.destroy_shader_module(frag_module, None);
+    }
+
+
+}
+
 fn run() -> Result<(), &'static str> {
     let width: u32 = 400;
     let height: u32 = 400;
@@ -501,8 +527,6 @@ fn run() -> Result<(), &'static str> {
 
     let image_views = create_image_views(&device, &swapchain_images, swapchain_image_format.format);
 
-    let vertex_module = create_shader_module(&device, "../shaders/vert.spv");
-    let frag_module = create_shader_module(&device, "../shaders/vert.spv");
 
     let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
 
