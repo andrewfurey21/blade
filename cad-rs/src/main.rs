@@ -3,11 +3,10 @@ use ash::vk;
 use gpu_allocator::{vulkan::*, MemoryLocation};
 use log::*;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use std::ffi::{c_char, CStr, CString};
+use std::io::prelude::*;
 use std::time;
 use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::Window, window::WindowBuilder};
-use std::io::prelude::*;
-use std::ffi::{c_char, CString, CStr};
-
 
 struct SurfaceDetails {
     surface_fn: ash::extensions::khr::Surface,
@@ -430,21 +429,29 @@ fn create_image_views(
     Ok(image_views)
 }
 
-fn create_shader_module(device: &ash::Device, file_name: &'static str) -> Result<vk::ShaderModule, &'static str> {
+fn create_shader_module(
+    device: &ash::Device,
+    file_name: &'static str,
+) -> Result<vk::ShaderModule, &'static str> {
     //TODO: check for spv file using file method
     let path = std::path::Path::new(file_name);
     let file = std::fs::File::open(path).expect(&format!("Couldn't open file at {}", file_name));
-    let bytes = std::io::BufReader::new(file).bytes().flatten().map(|n| n as u32).collect::<Vec<_>>();
+    let bytes = std::io::BufReader::new(file)
+        .bytes()
+        .flatten()
+        .map(|n| n as u32)
+        .collect::<Vec<_>>();
 
     let create_info = vk::ShaderModuleCreateInfo::builder().code(bytes.as_slice());
 
     unsafe {
-        device.create_shader_module(&create_info, None).map_err(|_| "Couldn't create shader module.")
+        device
+            .create_shader_module(&create_info, None)
+            .map_err(|_| "Couldn't create shader module.")
     }
 }
 
 fn create_graphics_pipeline(device: &ash::Device, swapchain_extent: vk::Extent2D) {
-
     let vertex_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
     let frag_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
 
@@ -463,7 +470,8 @@ fn create_graphics_pipeline(device: &ash::Device, swapchain_extent: vk::Extent2D
 
     // viewport, scissor for now, multiple viewports require setting feature
     let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-    let pipeline_dyn_states = vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
+    let pipeline_dyn_states =
+        vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
 
     let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default();
     let input_assembly_input = vk::PipelineInputAssemblyStateCreateInfo {
@@ -529,13 +537,19 @@ fn create_graphics_pipeline(device: &ash::Device, swapchain_extent: vk::Extent2D
         .blend_constants([0.0, 0.0, 0.0, 0.0])
         .build();
 
-
     unsafe {
         device.destroy_shader_module(vertex_module, None);
         device.destroy_shader_module(frag_module, None);
     }
+}
 
-
+fn create_pipeline_layout(device: &ash::Device) -> Result<vk::PipelineLayout, &'static str> {
+    let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default();
+    unsafe {
+        device
+            .create_pipeline_layout(&pipeline_layout_info, None)
+            .map_err(|_| "Couldn't create pipeline layout")
+    }
 }
 
 fn run() -> Result<(), &'static str> {
@@ -596,7 +610,8 @@ fn run() -> Result<(), &'static str> {
 
     let image_views = create_image_views(&device, &swapchain_images, swapchain_image_format.format);
 
-    let pipeline_layout = vk::PipelineLayoutCreateInfo::default();
+    //TODO: change from create info to info
+    let pipeline_layout = create_pipeline_layout(&device);
 
     let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
 
