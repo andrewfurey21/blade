@@ -1,3 +1,5 @@
+//TODO: fix references when refactoring
+
 #![allow(unused)]
 use ash::vk;
 use gpu_allocator::{vulkan::*, MemoryLocation};
@@ -577,12 +579,12 @@ fn create_render_pass(
         .color_attachments(&[color_attachment_ref])
         .build();
 
-    let renderpass_info = vk::RenderPassCreateInfo::builder()
+    let render_pass_info = vk::RenderPassCreateInfo::builder()
         .attachments(&[attachment_description])
         .subpasses(&[subpass])
         .build();
 
-    unsafe { device.create_render_pass(&renderpass_info, None) }
+    unsafe { device.create_render_pass(&render_pass_info, None) }
         .map_err(|_| "Couldn't create render pass")
 }
 
@@ -645,7 +647,8 @@ fn run() -> Result<(), &'static str> {
     let image_views = create_image_views(&device, &swapchain_images, swapchain_image_format.format);
 
     //TODO: change from create info to info
-    let pipeline_layout = create_pipeline_layout(&device);
+    let pipeline_layout = create_pipeline_layout(&device)?;
+    let render_pass = create_render_pass(&device, &swapchain_image_format.format)?;
 
     let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
 
@@ -718,6 +721,8 @@ fn run() -> Result<(), &'static str> {
         //TODO: do an impl Drop instead
         winit::event::Event::LoopDestroyed => {
             unsafe {
+                device.destroy_render_pass(render_pass, None);
+                device.destroy_pipeline_layout(pipeline_layout, None);
                 swapchain_fn.destroy_swapchain(swapchain, None);
 
                 surface_details.surface_fn.destroy_surface(surface, None);
