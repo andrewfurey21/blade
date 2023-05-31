@@ -250,34 +250,6 @@ fn create_buffer(device: &ash::Device, size: u32) -> Result<vk::Buffer, &'static
     }
 }
 
-fn create_command_pool(
-    device: &ash::Device,
-    queue_index: u32,
-) -> Result<vk::CommandPool, &'static str> {
-    let create_info = vk::CommandPoolCreateInfo::builder()
-        .queue_family_index(queue_index)
-        .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-
-    unsafe { device.create_command_pool(&create_info, None) }
-        .map_err(|_| "Couldn't create command pool")
-}
-
-fn create_command_buffer(
-    device: &ash::Device,
-    command_pool: vk::CommandPool,
-) -> Result<vk::CommandBuffer, &'static str> {
-    let create_info = vk::CommandBufferAllocateInfo::builder()
-        .level(vk::CommandBufferLevel::PRIMARY)
-        .command_pool(command_pool)
-        .command_buffer_count(1);
-
-    unsafe { device.allocate_command_buffers(&create_info) }
-        .map_err(|_| "Couldn't create command buffers.")?
-        .into_iter()
-        .next()
-        .ok_or_else(|| "No command buffer found.")
-}
-
 fn create_fence(device: &ash::Device) -> Result<vk::Fence, &'static str> {
     let create_info = vk::FenceCreateInfo::builder()
         .flags(vk::FenceCreateFlags::SIGNALED)
@@ -488,9 +460,10 @@ fn create_graphics_pipelines(
     let shader_stages = [vert_shader_stage, frag_shader_stage];
 
     //     viewport, scissor for now, multiple viewports require setting feature
-    //   let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-    //   let pipeline_dyn_states =
-    //       vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
+    let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+    let pipeline_dyn_states = vk::PipelineDynamicStateCreateInfo::builder()
+        .dynamic_states(&dynamic_states)
+        .build();
 
     let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default();
     let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
@@ -577,6 +550,7 @@ fn create_graphics_pipelines(
         .subpass(0)
         .base_pipeline_handle(vk::Pipeline::null())
         .base_pipeline_index(-1)
+        .dynamic_state(&pipeline_dyn_states)
         .build()];
 
     let graphics_pipelines = unsafe {
@@ -589,7 +563,6 @@ fn create_graphics_pipelines(
         device.destroy_shader_module(vertex_module, None);
         device.destroy_shader_module(frag_module, None);
     }
-    println!("{:?}", graphics_pipelines);
     Ok((graphics_pipelines, pipeline_layout))
 }
 
@@ -627,7 +600,7 @@ fn create_render_pass(
         .map_err(|_| "Couldn't create render pass")
 }
 
-fn create_framebuffer(
+fn create_framebuffers(
     device: &ash::Device,
     image_views: &Vec<vk::ImageView>,
     render_pass: &vk::RenderPass,
@@ -650,6 +623,98 @@ fn create_framebuffer(
         swapchain_buffers.push(framebuffer);
     }
     Ok(swapchain_buffers)
+}
+
+fn create_command_pool(
+    device: &ash::Device,
+    queue_index: u32,
+) -> Result<vk::CommandPool, &'static str> {
+    let create_info = vk::CommandPoolCreateInfo::builder()
+        .queue_family_index(queue_index)
+        .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+
+    unsafe { device.create_command_pool(&create_info, None) }
+        .map_err(|_| "Couldn't create command pool")
+}
+
+fn create_command_buffer(
+    device: &ash::Device,
+    command_pool: vk::CommandPool,
+) -> Result<vk::CommandBuffer, &'static str> {
+    let create_info = vk::CommandBufferAllocateInfo::builder()
+        .level(vk::CommandBufferLevel::PRIMARY)
+        .command_pool(command_pool)
+        .command_buffer_count(1);
+
+    unsafe { device.allocate_command_buffers(&create_info) }
+        .map_err(|_| "Couldn't create command buffers.")?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "No command buffer found.")
+}
+
+fn record_command_buffer(
+    device: &ash::Device,
+    command_buffer: &vk::CommandBuffer,
+    render_pass: &vk::RenderPass,
+    framebuffers: &Vec<vk::Framebuffer>,
+    image_index: usize,
+    swapchain_extent: &vk::Extent2D,
+    graphics_pipeline: &vk::Pipeline,
+) {
+    let command_buffer_begin_info = vk::CommandBufferBeginInfo::default();
+
+    unsafe {
+        device
+            .begin_command_buffer(*command_buffer, &command_buffer_begin_info)
+            .unwrap()
+    };
+
+    let render_area = vk::Rect2D {
+        offset: vk::Offset2D { x: 0, y: 0 },
+        extent: *swapchain_extent,
+    };
+
+    let clear_values = [vk::ClearValue {
+        color: vk::ClearColorValue {
+            float32: [0.0, 0.0, 0.0, 1.0],
+        },
+    }];
+
+    let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
+        .render_pass(*render_pass)
+        .framebuffer(framebuffers[image_index])
+        .render_area(render_area)
+        .clear_values(&clear_values)
+        .build();
+
+    let viewports = [vk::Viewport::builder()
+        .width(swapchain_extent.width as f32)
+        .height(swapchain_extent.height as f32)
+        .max_depth(1.0)
+        .build()];
+
+    let scissors = [vk::Rect2D::builder().extent(*swapchain_extent).build()];
+
+    unsafe {
+        device.cmd_begin_render_pass(
+            *command_buffer,
+            &render_pass_begin_info,
+            vk::SubpassContents::INLINE,
+        );
+
+        device.cmd_bind_pipeline(
+            *command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            *graphics_pipeline,
+        );
+        device.cmd_set_viewport(*command_buffer, 0, &viewports);
+        device.cmd_set_scissor(*command_buffer, 0, &scissors);
+
+        device.cmd_draw(*command_buffer, 3, 1, 0, 0);
+
+        device.cmd_end_render_pass(*command_buffer);
+    }
 }
 
 fn run() -> Result<(), &'static str> {
@@ -722,9 +787,7 @@ fn run() -> Result<(), &'static str> {
         &render_pass,
     )?;
 
-    let framebuffer = create_framebuffer(&device, &image_views, &render_pass, &swapchain_extent)?;
-
-    //let framebuffer = create_framebuffer(&device, &image_views, &render_pass, &swapchain_extent)?;
+    let framebuffers = create_framebuffers(&device, &image_views, &render_pass, &swapchain_extent)?;
 
     let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
 
@@ -764,35 +827,35 @@ fn run() -> Result<(), &'static str> {
 
             unsafe { device.reset_fences(std::slice::from_ref(&fence)).unwrap() };
 
-            let command_begin_info = vk::CommandBufferBeginInfo::builder();
-            unsafe {
-                device
-                    .begin_command_buffer(command_buffer, &command_begin_info)
-                    .unwrap()
-            };
+            //let command_begin_info = vk::CommandBufferBeginInfo::builder();
+            //unsafe {
+            //    device
+            //        .begin_command_buffer(command_buffer, &command_begin_info)
+            //        .unwrap()
+            //};
 
-            let pixel_value = blue | green << 8 | red << 16;
+            //let pixel_value = blue | green << 8 | red << 16;
 
-            unsafe {
-                device.cmd_fill_buffer(
-                    command_buffer,
-                    buffer,
-                    allocation.as_ref().unwrap().offset(),
-                    allocation.as_ref().unwrap().size(),
-                    pixel_value,
-                )
-            };
+            //unsafe {
+            //    device.cmd_fill_buffer(
+            //        command_buffer,
+            //        buffer,
+            //        allocation.as_ref().unwrap().offset(),
+            //        allocation.as_ref().unwrap().size(),
+            //        pixel_value,
+            //    )
+            //};
 
-            unsafe { device.end_command_buffer(command_buffer).unwrap() };
+            //unsafe { device.end_command_buffer(command_buffer).unwrap() };
 
-            let submit_info =
-                vk::SubmitInfo::builder().command_buffers(std::slice::from_ref(&command_buffer));
+            //let submit_info =
+            //    vk::SubmitInfo::builder().command_buffers(std::slice::from_ref(&command_buffer));
 
-            unsafe {
-                device
-                    .queue_submit(queue, std::slice::from_ref(&submit_info), fence)
-                    .unwrap()
-            };
+            //unsafe {
+            //    device
+            //        .queue_submit(queue, std::slice::from_ref(&submit_info), fence)
+            //        .unwrap()
+            //};
         }
         //TODO: do an impl Drop instead
         winit::event::Event::LoopDestroyed => {
