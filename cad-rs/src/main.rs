@@ -7,6 +7,8 @@ use log::*;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::ffi::{c_char, CStr, CString};
 use std::io::prelude::*;
+use std::path::Path;
+use std::ptr;
 use std::time;
 use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::Window, window::WindowBuilder};
 
@@ -433,53 +435,62 @@ fn create_image_views(
 
 fn create_shader_module(
     device: &ash::Device,
-    file_name: &'static str,
+    bytes: &Vec<u8>,
 ) -> Result<vk::ShaderModule, &'static str> {
-    //TODO: check for spv file using file method
-    let path = std::path::Path::new(file_name);
-    let file = std::fs::File::open(path).expect(&format!("Couldn't open file at {}", file_name));
-    let bytes = std::io::BufReader::new(file)
-        .bytes()
-        .flatten()
-        .map(|n| n as u32)
-        .collect::<Vec<_>>();
-
-    let create_info = vk::ShaderModuleCreateInfo::builder().code(bytes.as_slice());
-
+    let shader_module_create_info = vk::ShaderModuleCreateInfo {
+        s_type: vk::StructureType::SHADER_MODULE_CREATE_INFO,
+        p_next: ptr::null(),
+        flags: vk::ShaderModuleCreateFlags::empty(),
+        code_size: bytes.len(),
+        p_code: bytes.as_ptr() as *const u32,
+    };
     unsafe {
         device
-            .create_shader_module(&create_info, None)
+            .create_shader_module(&shader_module_create_info, None)
             .map_err(|_| "Couldn't create shader module.")
     }
 }
 
-fn create_graphics_pipeline(
+fn read_shader_code(file_name: &str) -> Result<Vec<u8>, &'static str> {
+    let path = std::path::Path::new(file_name);
+    let file = std::fs::File::open(path).expect(&format!("Failed to find spv file at {:?}", path));
+    Ok(file.bytes().flatten().collect::<Vec<u8>>())
+}
+
+fn create_graphics_pipelines(
     device: &ash::Device,
     swapchain_extent: &vk::Extent2D,
     swapchain_image_format: &vk::SurfaceFormatKHR,
-) -> Result<Vec<vk::Pipeline>, &'static str> {
-    let vertex_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
-    let frag_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
+    render_pass: &vk::RenderPass,
+) -> Result<(Vec<vk::Pipeline>, vk::PipelineLayout), &'static str> {
+    //let vertex_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
+    //let frag_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
+    let vert_shader_code = read_shader_code("../shaders/vert.spv")?;
+    let frag_shader_code = read_shader_code("../shaders/frag.spv")?;
 
-    let binding = CString::new("main").expect("Couldn't make c string");
+    let vertex_module = create_shader_module(device, &vert_shader_code)?;
+    let frag_module = create_shader_module(device, &frag_shader_code)?;
+
+    let main_function_name = CString::new("main").expect("Couldn't make c string");
+
     let vert_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
-        .name(binding.as_c_str())
+        .name(main_function_name.as_c_str())
         .stage(vk::ShaderStageFlags::VERTEX)
         .module(vertex_module)
         .build();
 
     let frag_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
-        .name(binding.as_c_str())
+        .name(main_function_name.as_c_str())
         .stage(vk::ShaderStageFlags::FRAGMENT)
         .module(frag_module)
         .build();
 
     let shader_stages = [vert_shader_stage, frag_shader_stage];
 
-    // viewport, scissor for now, multiple viewports require setting feature
-    let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-    let pipeline_dyn_states =
-        vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
+    //     viewport, scissor for now, multiple viewports require setting feature
+    //   let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+    //   let pipeline_dyn_states =
+    //       vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
 
     let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default();
     let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
@@ -488,21 +499,21 @@ fn create_graphics_pipeline(
         ..Default::default()
     };
 
-    let viewport = vk::Viewport {
+    let viewports = [vk::Viewport {
         width: swapchain_extent.width as f32,
         height: swapchain_extent.height as f32,
         max_depth: 1.0,
         ..Default::default()
-    };
+    }];
 
-    let scissor = vk::Rect2D {
+    let scissors = [vk::Rect2D {
         extent: *swapchain_extent,
         ..Default::default()
-    };
+    }];
 
     let viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
-        .viewport_count(1)
-        .scissor_count(1)
+        .viewports(&viewports)
+        .scissors(&scissors)
         .build();
 
     // most of the other options for each setting requires a gpu feature to be set
@@ -545,11 +556,15 @@ fn create_graphics_pipeline(
         .blend_constants([0.0, 0.0, 0.0, 0.0])
         .build();
 
-    let pipeline_layout = create_pipeline_layout(device)?;
+    let pipeline_layout_create_info = vk::PipelineLayoutCreateInfo::default();
 
-    let render_pass = create_render_pass(&device, &swapchain_image_format.format)?;
+    let pipeline_layout = unsafe {
+        device
+            .create_pipeline_layout(&pipeline_layout_create_info, None)
+            .expect("Failed to create pipeline layout!")
+    };
 
-    let pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
+    let pipeline_info = [vk::GraphicsPipelineCreateInfo::builder()
         .stages(&shader_stages)
         .vertex_input_state(&vertex_input_info)
         .input_assembly_state(&input_assembly_state)
@@ -557,35 +572,25 @@ fn create_graphics_pipeline(
         .rasterization_state(&rasterization_create_info)
         .multisample_state(&multisample_state_create_info)
         .color_blend_state(&color_blend_state_create_info)
-        .dynamic_state(&pipeline_dyn_states)
         .layout(pipeline_layout)
-        .render_pass(render_pass)
+        .render_pass(*render_pass)
         .subpass(0)
         .base_pipeline_handle(vk::Pipeline::null())
         .base_pipeline_index(-1)
-        .build();
+        .build()];
+
+    let graphics_pipelines = unsafe {
+        device
+            .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_info, None)
+            .expect("Couldn't create graphics pipeline.")
+    };
 
     unsafe {
-        //seg faults
-        //device.destroy_shader_module(vertex_module, None);
-        //device.destroy_shader_module(frag_module, None);
-
-        //device.destroy_render_pass(render_pass, None);
-        //device.destroy_pipeline_layout(pipeline_layout, None);
-
-        device
-            .create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None)
-            .map_err(|_| "Couldn't create graphics pipeline.")
+        device.destroy_shader_module(vertex_module, None);
+        device.destroy_shader_module(frag_module, None);
     }
-}
-
-fn create_pipeline_layout(device: &ash::Device) -> Result<vk::PipelineLayout, &'static str> {
-    let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default();
-    unsafe {
-        device
-            .create_pipeline_layout(&pipeline_layout_info, None)
-            .map_err(|_| "Couldn't create pipeline layout")
-    }
+    println!("{:?}", graphics_pipelines);
+    Ok((graphics_pipelines, pipeline_layout))
 }
 
 fn create_render_pass(
@@ -620,6 +625,31 @@ fn create_render_pass(
 
     unsafe { device.create_render_pass(&render_pass_info, None) }
         .map_err(|_| "Couldn't create render pass")
+}
+
+fn create_framebuffer(
+    device: &ash::Device,
+    image_views: &Vec<vk::ImageView>,
+    render_pass: &vk::RenderPass,
+    swapchain_extent: &vk::Extent2D,
+) -> Result<Vec<vk::Framebuffer>, &'static str> {
+    let mut swapchain_buffers: Vec<vk::Framebuffer> = vec![];
+    for image_view in image_views {
+        let attachments = [*image_view];
+
+        let framebuffer_info = vk::FramebufferCreateInfo::builder()
+            .render_pass(*render_pass)
+            .attachments(&attachments)
+            .width(swapchain_extent.width)
+            .height(swapchain_extent.height)
+            .layers(1)
+            .build();
+
+        let framebuffer = unsafe { device.create_framebuffer(&framebuffer_info, None) }
+            .map_err(|_| "Couldn't create framebuffer.")?;
+        swapchain_buffers.push(framebuffer);
+    }
+    Ok(swapchain_buffers)
 }
 
 fn run() -> Result<(), &'static str> {
@@ -678,12 +708,23 @@ fn run() -> Result<(), &'static str> {
         choose_swapchain_extent(&swapchain_support_details.capabilities, width, height)?;
     let swapchain_image_format = swapchain_support_details.choose_surface_format()?;
 
-    let image_views = create_image_views(&device, &swapchain_images, swapchain_image_format.format);
+    let image_views =
+        create_image_views(&device, &swapchain_images, swapchain_image_format.format)?;
 
     //TODO: change from create info to info
     //
-    let graphics_pipeline =
-        create_graphics_pipeline(&device, &swapchain_extent, &swapchain_image_format);
+
+    let render_pass = create_render_pass(&device, &swapchain_image_format.format)?;
+    let graphics_pipelines = create_graphics_pipelines(
+        &device,
+        &swapchain_extent,
+        &swapchain_image_format,
+        &render_pass,
+    )?;
+
+    let framebuffer = create_framebuffer(&device, &image_views, &render_pass, &swapchain_extent)?;
+
+    //let framebuffer = create_framebuffer(&device, &image_views, &render_pass, &swapchain_extent)?;
 
     let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
 
