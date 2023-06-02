@@ -717,6 +717,17 @@ fn record_command_buffer(
     }
 }
 
+fn create_semaphore(device: &ash::Device) -> Result<vk::Semaphore, &'static str> {
+    let create_info = vk::SemaphoreCreateInfo::default();
+    unsafe {
+        device
+            .create_semaphore(&create_info, None)
+            .map_err(|_| "Couldn't create semaphore")
+    }
+}
+
+fn draw_frame() {}
+
 fn run() -> Result<(), &'static str> {
     let width: u32 = 400;
     let height: u32 = 400;
@@ -789,25 +800,22 @@ fn run() -> Result<(), &'static str> {
 
     let framebuffers = create_framebuffers(&device, &image_views, &render_pass, &swapchain_extent)?;
 
-    let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
-
-    let size_of_buffer = width * height;
-    let buffer = create_buffer(&device, size_of_buffer)?;
-    let mut allocation = Some(create_allocation(
-        &device,
-        allocator.as_mut().unwrap(),
-        buffer,
-    )?);
-
     let command_pool = create_command_pool(&device, queue_family_index)?;
     let command_buffer = create_command_buffer(&device, command_pool)?;
 
     let fence = create_fence(&device)?;
+    let image_available = create_semaphore(&device)?;
+    let render_finished = create_semaphore(&device)?;
 
-    let mut t: f64 = 0.0;
-    let mut red = 0;
-    let blue = 125;
-    let green = 50;
+    //let mut allocator = Some(create_allocator(&instance, &device, physical_device)?);
+    //
+    //let size_of_buffer = width * height;
+    //let buffer = create_buffer(&device, size_of_buffer)?;
+    //let mut allocation = Some(create_allocation(
+    //&device,
+    //allocator.as_mut().unwrap(),
+    //buffer,
+    //)?);
 
     event_loop.run(move |event, _, control_flow| match event {
         winit::event::Event::WindowEvent { window_id, event } => {
@@ -818,10 +826,6 @@ fn run() -> Result<(), &'static str> {
             }
         }
         winit::event::Event::MainEventsCleared => {
-            let start = time::Instant::now();
-            t += 0.001;
-            red = ((t.sin() * 0.5 + 0.5) * 255.0) as u32;
-
             unsafe { device.wait_for_fences(std::slice::from_ref(&fence), true, u64::MAX) }
                 .unwrap();
 
@@ -864,20 +868,21 @@ fn run() -> Result<(), &'static str> {
 
                 surface_details.surface_fn.destroy_surface(surface, None);
                 device.queue_wait_idle(queue).unwrap();
+                device.destroy_semaphore(image_available, None);
+                device.destroy_semaphore(render_finished, None);
                 device.destroy_fence(fence, None);
                 device.destroy_command_pool(command_pool, None);
 
-                device.destroy_buffer(buffer, None);
                 device.destroy_device(None);
                 instance.destroy_instance(None);
             }
 
-            allocator
-                .as_mut()
-                .unwrap()
-                .free(allocation.take().unwrap())
-                .unwrap();
-            drop(allocator.take().unwrap());
+            //allocator
+            //.as_mut()
+            //.unwrap()
+            //.free(allocation.take().unwrap())
+            //.unwrap();
+            //drop(allocator.take().unwrap());
         }
         _ => {}
     });
