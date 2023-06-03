@@ -437,8 +437,8 @@ fn create_graphics_pipelines(
 ) -> Result<(Vec<vk::Pipeline>, vk::PipelineLayout), &'static str> {
     //let vertex_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
     //let frag_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
-    let vert_shader_code = read_shader_code("../shaders/vert.spv")?;
-    let frag_shader_code = read_shader_code("../shaders/frag.spv")?;
+    let vert_shader_code = read_shader_code("../shaders/spv/vert.spv")?;
+    let frag_shader_code = read_shader_code("../shaders/spv/frag.spv")?;
 
     let vertex_module = create_shader_module(device, &vert_shader_code)?;
     let frag_module = create_shader_module(device, &frag_shader_code)?;
@@ -726,7 +726,74 @@ fn create_semaphore(device: &ash::Device) -> Result<vk::Semaphore, &'static str>
     }
 }
 
-fn draw_frame() {}
+//device: &ash::Device,
+//command_buffer: &vk::CommandBuffer,
+//render_pass: &vk::RenderPass,
+//framebuffers: &Vec<vk::Framebuffer>,
+//image_index: usize,
+//swapchain_extent: &vk::Extent2D,
+//graphics_pipeline: &vk::Pipeline,
+fn draw_frame(
+    device: &ash::Device,
+    fence: &vk::Fence,
+    swapchain_fn: &ash::extensions::khr::Swapchain,
+    image_available: &vk::Semaphore,
+    swapchain: &vk::SwapchainKHR,
+    command_buffer: &vk::CommandBuffer,
+    render_pass: &vk::RenderPass,
+    framebuffers: &Vec<vk::Framebuffer>,
+    swapchain_extent: &vk::Extent2D,
+    graphics_pipeline: &vk::Pipeline,
+    render_finished: &vk::Semaphore,
+) {
+    unsafe {
+        device.wait_for_fences(&[*fence], true, std::u64::MAX);
+        device.reset_fences(&[*fence]);
+    }
+
+    let (image_index, sub_optimal) = unsafe {
+        swapchain_fn
+            .acquire_next_image(*swapchain, std::u64::MAX, *image_available, *fence)
+            .expect("Couldn't acquire next image.")
+    };
+
+    unsafe {
+        device.reset_command_buffer(*command_buffer, vk::CommandBufferResetFlags::from_raw(0));
+    }
+
+    record_command_buffer(
+        device,
+        command_buffer,
+        render_pass,
+        framebuffers,
+        image_index as usize,
+        swapchain_extent,
+        graphics_pipeline,
+    );
+
+    let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+
+    //let submit_infos = [vk::SubmitInfo {
+    //            s_type: vk::StructureType::SUBMIT_INFO,
+    //            p_next: ptr::null(),
+    //            wait_semaphore_count: wait_semaphores.len() as u32,
+    //            p_wait_semaphores: wait_semaphores.as_ptr(),
+    //            p_wait_dst_stage_mask: wait_stages.as_ptr(),
+    //            command_buffer_count: 1,
+    //            p_command_buffers: &self.command_buffers[image_index as usize],
+    //            signal_semaphore_count: signal_semaphores.len() as u32,
+    //            p_signal_semaphores: signal_semaphores.as_ptr(),
+    //        }];
+    let submit_info = vk::SubmitInfo {
+        s_type: vk::StructureType::SUBMIT_INFO,
+        p_next: ptr::null(),
+        p_wait_semaphores: std::slice::from_ref(image_available).as_ptr(),
+        wait_semaphore_count: 1,
+        p_wait_dst_stage_mask: wait_stages.as_ptr(),
+        command_buffer_count: 1,
+        ..Default::default()
+    };
+}
 
 fn run() -> Result<(), &'static str> {
     let width: u32 = 400;
@@ -816,7 +883,7 @@ fn run() -> Result<(), &'static str> {
     //allocator.as_mut().unwrap(),
     //buffer,
     //)?);
-
+    let mut i = 0;
     event_loop.run(move |event, _, control_flow| match event {
         winit::event::Event::WindowEvent { window_id, event } => {
             if window_id == window.id() {
@@ -826,11 +893,21 @@ fn run() -> Result<(), &'static str> {
             }
         }
         winit::event::Event::MainEventsCleared => {
-            unsafe { device.wait_for_fences(std::slice::from_ref(&fence), true, u64::MAX) }
-                .unwrap();
-
-            unsafe { device.reset_fences(std::slice::from_ref(&fence)).unwrap() };
-
+            i += 1;
+            println!("{}", i);
+            draw_frame(
+                &device,
+                &fence,
+                &swapchain_fn,
+                &image_available,
+                &swapchain,
+                &command_buffer,
+                &render_pass,
+                &framebuffers,
+                &swapchain_extent,
+                &graphics_pipelines.0[0],
+                &render_finished,
+            );
             //let command_begin_info = vk::CommandBufferBeginInfo::builder();
             //unsafe {
             //    device

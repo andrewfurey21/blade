@@ -1,7 +1,7 @@
 echo "Building vertex shader"
-glslc shaders/shader.vert -o shaders/vert.spv
+glslc shaders/src/shader.vert -o shaders/spv/vert.spv
 echo "Building fragment shader"
-glslc shaders/shader.frag -o shaders/frag.spv
+glslc shaders/src/shader.frag -o shaders/spv/frag.spv
 cd cad-rs
 echo "Building project"
 cargo fmt | cargo run
