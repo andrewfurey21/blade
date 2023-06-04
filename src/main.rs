@@ -586,6 +586,15 @@ fn create_render_pass(
         .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
         .build();
 
+    let dependency = vk::SubpassDependency::builder()
+        .src_subpass(vk::SUBPASS_EXTERNAL)
+        .dst_subpass(0)
+        .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+        .src_access_mask(vk::AccessFlags::empty())
+        .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+        .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+        .dependency_flags(vk::DependencyFlags::empty());
+
     let subpass = vk::SubpassDescription::builder()
         .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
         .color_attachments(&[color_attachment_ref])
@@ -594,6 +603,7 @@ fn create_render_pass(
     let render_pass_info = vk::RenderPassCreateInfo::builder()
         .attachments(&[attachment_description])
         .subpasses(&[subpass])
+        .dependencies(&[*dependency])
         .build();
 
     unsafe { device.create_render_pass(&render_pass_info, None) }
@@ -791,8 +801,18 @@ fn draw_frame(
         wait_semaphore_count: 1,
         p_wait_dst_stage_mask: wait_stages.as_ptr(),
         command_buffer_count: 1,
-        ..Default::default()
+        p_command_buffers: std::slice::from_ref(command_buffer).as_ptr(),
+        signal_semaphore_count: 1,
+        p_signal_semaphores: std::slice::from_ref(render_finished).as_ptr(),
     };
+
+    unsafe { device.queue_submit() }
+
+    let present_info = vk::PresentInfoKHR::builder()
+        .wait_semaphores(std::slice::from_ref(render_finished))
+        .swapchains(std::slice::from_ref(swapchain))
+        .image_indices(std::slice::from_ref(&image_index))
+        .build();
 }
 
 fn run() -> Result<(), &'static str> {
