@@ -8,15 +8,12 @@ fn main() {
     env_logger::init();
 
     info!("Starting up application...");
-    let app = App::new();
-    if let Err(desc) = app {
-        error!("{}", desc);
-    }
 
-    // let run = app.run();
-    // if let Err(desc) = run {
-    //  error!("{}", desc);
-    //}
-    //
-    info!("Exiting application.");
+    let event_loop = winit::event_loop::EventLoop::new();
+    let app = App::new(&event_loop);
+
+    match app {
+        Ok(app) => app.run(event_loop),
+        Err(desc) => error!("{}", desc),
+    }
 }
