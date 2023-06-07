@@ -11,7 +11,10 @@
 //use std::ptr;
 //use std::time;
 
-use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::Window, window::WindowBuilder};
+use winit::{
+    dpi::PhysicalSize, event, event::Event, event_loop::EventLoop, window::Window,
+    window::WindowBuilder,
+};
 
 use crate::constants::*;
 //
@@ -991,31 +994,37 @@ use crate::constants::*;
 //}
 
 pub struct App {
-    event_loop: EventLoop<()>,
     window: Window,
     entry: ash::Entry,
 }
 
 impl App {
-    pub fn new() -> Result<App, &'static str> {
-        let event_loop = EventLoop::new();
+    pub fn new(event_loop: &EventLoop<()>) -> Result<App, &'static str> {
         let window = App::init_window(&event_loop, WIDTH, HEIGHT)?;
 
         let entry = unsafe { ash::Entry::load() }.map_err(|_| "Coudn't create Vulkan entry")?;
 
-        Ok(App {
-            event_loop,
-            window,
-            entry,
-        })
+        Ok(App { window, entry })
     }
 
-    pub fn run(&self) -> Result<(), &'static str> {
-        todo!();
+    pub fn run(mut self, event_loop: EventLoop<()>) -> ! {
+        event_loop.run(move |event, _, control_flow| match event {
+            Event::WindowEvent { window_id, event } => {
+                if window_id == self.window.id() {
+                    if let event::WindowEvent::CloseRequested = event {
+                        control_flow.set_exit();
+                    }
+                }
+            }
+            Event::MainEventsCleared => {
+                self.draw_frame();
+            }
+            _ => {}
+        });
     }
 
-    fn init_window<T>(
-        event_loop: &EventLoop<T>,
+    fn init_window(
+        event_loop: &EventLoop<()>,
         width: u32,
         height: u32,
     ) -> Result<Window, &'static str> {
@@ -1027,8 +1036,5 @@ impl App {
             .map_err(|_| "Couldn't create window.")
     }
 
-}
-
-impl Drop for App {
-    fn drop(&mut self) {}
+    fn draw_frame(&self) {}
 }
