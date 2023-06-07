@@ -1,22 +1,22 @@
 //TODO: fix references when refactoring
 
 //#![allow(unused)]
-//use ash::vk;
 //use gpu_allocator::{vulkan::*, MemoryLocation};
-//use log::*;
-//use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-//use std::ffi::{c_char, CStr, CString};
 //use std::io::prelude::*;
 //use std::path::Path;
 //use std::ptr;
 //use std::time;
 
+use ash::vk;
+use raw_window_handle::HasRawDisplayHandle;
+use std::ffi::c_char;
 use winit::{
     dpi::PhysicalSize, event, event::Event, event_loop::EventLoop, window::Window,
     window::WindowBuilder,
 };
 
 use crate::constants::*;
+
 //
 //struct SurfaceDetails {
 //    surface_fn: ash::extensions::khr::Surface,
@@ -995,7 +995,7 @@ use crate::constants::*;
 
 pub struct App {
     window: Window,
-    entry: ash::Entry,
+    instance: ash::Instance,
 }
 
 impl App {
@@ -1003,8 +1003,11 @@ impl App {
         let window = App::init_window(&event_loop, WIDTH, HEIGHT)?;
 
         let entry = unsafe { ash::Entry::load() }.map_err(|_| "Coudn't create Vulkan entry")?;
+        let surface_extensions = App::get_surface_extensions(event_loop)?;
 
-        Ok(App { window, entry })
+        let instance = App::create_instance(&entry, surface_extensions)?;
+
+        Ok(App { window, instance })
     }
 
     pub fn run(mut self, event_loop: EventLoop<()>) -> ! {
@@ -1034,6 +1037,25 @@ impl App {
             .with_resizable(true)
             .build(event_loop)
             .map_err(|_| "Couldn't create window.")
+    }
+
+    fn get_surface_extensions(
+        event_loop: &EventLoop<()>,
+    ) -> Result<&'static [*const c_char], &'static str> {
+        ash_window::enumerate_required_extensions(event_loop.raw_display_handle())
+            .map_err(|_| "Couldn't enumerate required extensions.")
+    }
+
+    fn create_instance(
+        entry: &ash::Entry,
+        extension_names: &'static [*const c_char],
+    ) -> Result<ash::Instance, &'static str> {
+        let application_info = vk::ApplicationInfo::builder().api_version(vk::API_VERSION_1_3);
+        let create_info = vk::InstanceCreateInfo::builder()
+            .application_info(&application_info)
+            .enabled_extension_names(extension_names);
+
+        unsafe { entry.create_instance(&create_info, None) }.map_err(|_| "Couldn't create instance")
     }
 
     fn draw_frame(&self) {}
