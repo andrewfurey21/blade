@@ -1060,3 +1060,11 @@ impl App {
 
     fn draw_frame(&self) {}
 }
+
+impl Drop for App {
+    fn drop(&mut self) {
+        unsafe {
+            self.instance.destroy_instance(None);
+        }
+    }
+}
