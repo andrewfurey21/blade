@@ -7,15 +7,15 @@
 //use std::ptr;
 //use std::time;
 
+use crate::constants::*;
 use ash::vk;
 use raw_window_handle::HasRawDisplayHandle;
-use std::ffi::c_char;
+use std::ffi::{c_char, CStr};
+use std::os::raw::c_void;
 use winit::{
     dpi::PhysicalSize, event, event::Event, event_loop::EventLoop, window::Window,
     window::WindowBuilder,
 };
-
-use crate::constants::*;
 
 //
 //struct SurfaceDetails {
@@ -51,14 +51,14 @@ use crate::constants::*;
 //    unsafe {
 //        instance
 //            .enumerate_physical_devices()
-//            .map_err(|_| "Couldn't enumerate physical devices.")
+//            .map_err(|_| "couldn't enumerate physical devices.")
 //    }?
 //    .into_iter()
 //    .filter(|physical_device| {
-//        //TODO: fix checking for swapchain extension
+//        //todo: fix checking for swapchain extension
 //        // let extension_properties =
 //        //     unsafe { instance.enumerate_device_extension_properties(*physical_device) }
-//        //         .map_err(|_| "Couldn't enumerate device extension properties")
+//        //         .map_err(|_| "couldn't enumerate device extension properties")
 //        //         .unwrap();
 //        // for property in extension_properties {
 //        //     println!("{:?}", property);
@@ -66,10 +66,10 @@ use crate::constants::*;
 //        let current_features = unsafe { instance.get_physical_device_features(*physical_device) };
 //        let current_properties =
 //            unsafe { instance.get_physical_device_properties(*physical_device) };
-//        current_features.sample_rate_shading != 0 // && current_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU
+//        current_features.sample_rate_shading != 0 // && current_properties.device_type == vk::physicaldevicetype::discrete_gpu
 //    })
 //    .next()
-//    .ok_or_else(|| "No physical devices available.")
+//    .ok_or_else(|| "no physical devices available.")
 //}
 //
 //fn choose_queue_family_index(
@@ -993,9 +993,20 @@ use crate::constants::*;
 //    Ok(())
 //}
 
+struct QueueFamilyIndicies {
+    graphics_family: Option<u32>,
+}
+
+impl QueueFamilyIndicies {
+    fn is_complete(&self) -> bool {
+        self.graphics_family.is_some()
+    }
+}
+
 pub struct App {
     window: Window,
     instance: ash::Instance,
+    physical_device: vk::PhysicalDevice,
 }
 
 impl App {
@@ -1006,11 +1017,16 @@ impl App {
         let surface_extensions = App::get_surface_extensions(event_loop)?;
 
         let instance = App::create_instance(&entry, surface_extensions)?;
+        let physical_device = App::pick_physical_device(&instance)?;
 
-        Ok(App { window, instance })
+        Ok(App {
+            window,
+            instance,
+            physical_device,
+        })
     }
 
-    pub fn run(mut self, event_loop: EventLoop<()>) -> ! {
+    pub fn run(self, event_loop: EventLoop<()>) -> ! {
         event_loop.run(move |event, _, control_flow| match event {
             Event::WindowEvent { window_id, event } => {
                 if window_id == self.window.id() {
@@ -1055,7 +1071,51 @@ impl App {
             .application_info(&application_info)
             .enabled_extension_names(extension_names);
 
-        unsafe { entry.create_instance(&create_info, None) }.map_err(|_| "Couldn't create instance")
+        unsafe { entry.create_instance(&create_info, None) }
+            .map_err(|_| "Couldn't create instance.")
+    }
+
+    fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice, &'static str> {
+        unsafe {
+            instance
+                .enumerate_physical_devices()
+                .map_err(|_| "Couldn't enumerate physical devices.")
+        }?
+        .into_iter()
+        .filter(|physical_device| App::is_device_suitable(instance, *physical_device))
+        .next()
+        .ok_or_else(|| "No physical devices available.")
+    }
+
+    fn is_device_suitable(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> bool {
+        let indices = App::find_queue_family(instance, physical_device);
+        return indices.is_complete();
+    }
+
+    fn find_queue_family(
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+    ) -> QueueFamilyIndicies {
+        let queue_families =
+            unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
+
+        let mut queue_family_indices = QueueFamilyIndicies {
+            graphics_family: None,
+        };
+
+        for (index, queue_family) in queue_families.iter().enumerate() {
+            if queue_family.queue_count > 0
+                && queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+            {
+                queue_family_indices.graphics_family = Some(index as u32);
+            }
+
+            if queue_family_indices.is_complete() {
+                break;
+            }
+        }
+
+        queue_family_indices
     }
 
     fn draw_frame(&self) {}
@@ -1067,4 +1127,12 @@ impl Drop for App {
             self.instance.destroy_instance(None);
         }
     }
+}
+
+pub fn array_to_string(array: &[c_char]) -> &str {
+    let raw_string = unsafe { CStr::from_ptr(array.as_ptr()) };
+
+    raw_string
+        .to_str()
+        .expect("Failed to convert vulkan raw string.")
 }
