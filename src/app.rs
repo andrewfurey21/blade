@@ -115,30 +115,6 @@ use winit::{
 //        .ok_or_else(|| "Couldn't return queue family index")
 //}
 //
-//fn create_logical_device(
-//    instance: &ash::Instance,
-//    physical_device: vk::PhysicalDevice,
-//    queue_family_index: u32,
-//) -> Result<ash::Device, &'static str> {
-//    let priorities = [1.0];
-//    let queue_create_info = vk::DeviceQueueCreateInfo::builder()
-//        .queue_family_index(queue_family_index)
-//        .queue_priorities(&priorities);
-//
-//    let extensions = [ash::extensions::khr::Swapchain::name().as_ptr()];
-//
-//    let create_info = vk::DeviceCreateInfo::builder()
-//        .queue_create_infos(std::slice::from_ref(&queue_create_info))
-//        .enabled_extension_names(&extensions);
-//
-//    let instance = unsafe {
-//        instance
-//            .create_device(physical_device, &create_info, None)
-//            .map_err(|_| "Couldn't create logical device.")
-//    }?;
-//
-//    Ok(instance)
-//}
 //
 //fn get_queue_at_index(device: &ash::Device, index: u32) -> vk::Queue {
 //    unsafe { device.get_device_queue(index, 0) }
@@ -995,11 +971,11 @@ use winit::{
 //    Ok(())
 //}
 
-struct QueueFamilyIndicies {
+struct QueueFamilyIndices {
     graphics_family: Option<u32>,
 }
 
-impl QueueFamilyIndicies {
+impl QueueFamilyIndices {
     fn is_complete(&self) -> bool {
         self.graphics_family.is_some()
     }
@@ -1009,6 +985,9 @@ pub struct App {
     window: Window,
     instance: ash::Instance,
     physical_device: vk::PhysicalDevice,
+    queue_indices: QueueFamilyIndices,
+    device: ash::Device,
+    graphics_queue: vk::Queue,
 }
 
 impl App {
@@ -1028,10 +1007,18 @@ impl App {
         let instance = App::create_instance(&entry, surface_extensions)?;
         let physical_device = App::pick_physical_device(&instance)?;
 
+        let queue_indices = App::find_queue_family(&instance, physical_device);
+        let device = App::create_logical_device(&instance, physical_device, &queue_indices)?;
+
+        let graphics_queue = App::create_queue(&device, &queue_indices);
+
         Ok(App {
             window,
             instance,
             physical_device,
+            queue_indices,
+            device,
+            graphics_queue,
         })
     }
 
@@ -1075,16 +1062,9 @@ impl App {
         entry: &ash::Entry,
         extension_names: &'static [*const c_char],
     ) -> Result<ash::Instance, &'static str> {
-        // let create_info = vk::InstanceCreateInfo::builder()
-        //     .application_info(&application_info)
-        //     .enabled_extension_names(extension_names);
-
         if VALIDATION_ENABLED && !App::check_validation_layer_support(entry) {
             panic!("Validation layers requested, but not available!");
         }
-
-        let app_name = CString::new(TITLE).unwrap();
-        let engine_name = CString::new("Vulkan Engine").unwrap();
 
         let application_info = vk::ApplicationInfo::builder()
             .api_version(vk::API_VERSION_1_3)
@@ -1200,11 +1180,11 @@ impl App {
     fn find_queue_family(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-    ) -> QueueFamilyIndicies {
+    ) -> QueueFamilyIndices {
         let queue_families =
             unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
 
-        let mut queue_family_indices = QueueFamilyIndicies {
+        let mut queue_family_indices = QueueFamilyIndices {
             graphics_family: None,
         };
 
@@ -1221,6 +1201,56 @@ impl App {
         }
 
         queue_family_indices
+    }
+
+    fn create_logical_device(
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+        indices: &QueueFamilyIndices,
+    ) -> Result<ash::Device, &'static str> {
+        let priorities = [1.0];
+        let queue_create_info = vk::DeviceQueueCreateInfo::builder()
+            .queue_family_index(
+                indices
+                    .graphics_family
+                    .expect("No graphics family available to create device."),
+            )
+            .queue_priorities(&priorities);
+
+        let requred_validation_layer_raw_names: Vec<CString> = App::VALIDATION_LAYERS
+            .iter()
+            .map(|layer_name| CString::new(*layer_name).unwrap())
+            .collect();
+
+        let enable_layer_names: Vec<*const c_char> = requred_validation_layer_raw_names
+            .iter()
+            .map(|layer_name| layer_name.as_ptr())
+            .collect();
+
+        let extensions = [ash::extensions::khr::Swapchain::name().as_ptr()];
+
+        let create_info = if VALIDATION_ENABLED {
+            vk::DeviceCreateInfo::builder()
+                .queue_create_infos(std::slice::from_ref(&queue_create_info))
+                .enabled_extension_names(&extensions)
+                .enabled_layer_names(&enable_layer_names)
+        } else {
+            vk::DeviceCreateInfo::builder()
+                .queue_create_infos(std::slice::from_ref(&queue_create_info))
+                .enabled_extension_names(&extensions)
+        };
+
+        let instance = unsafe {
+            instance
+                .create_device(physical_device, &create_info, None)
+                .map_err(|_| "Couldn't create logical device.")
+        }?;
+
+        Ok(instance)
+    }
+
+    fn create_queue(device: &ash::Device, indices: &QueueFamilyIndices) -> vk::Queue {
+        unsafe { device.get_device_queue(indices.graphics_family.unwrap(), 0) }
     }
 
     fn draw_frame(&self) {}
