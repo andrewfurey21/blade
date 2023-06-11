@@ -1,10 +1,6 @@
-//TODO: fix references when refactoring
-
-//#![allow(unused)]
 //use gpu_allocator::{vulkan::*, MemoryLocation};
 //use std::io::prelude::*;
 //use std::path::Path;
-//use std::ptr;
 //use std::time;
 
 use crate::constants::*;
@@ -20,59 +16,6 @@ use winit::{
     dpi::PhysicalSize, event, event::Event, event_loop::EventLoop, window::Window,
     window::WindowBuilder,
 };
-//
-//impl SwapchainSupportDetails {
-//    fn new(
-//        physical_device: vk::PhysicalDevice,
-//        surface_details: &SurfaceDetails,
-//    ) -> Result<Self, &'static str> {
-//        unsafe {
-//            let capabilities = surface_details
-//                .surface_fn
-//                .get_physical_device_surface_capabilities(physical_device, surface_details.surface)
-//                .map_err(|_| "Couldn't get physical device surface capabilities")?;
-//            let present_modes = surface_details
-//                .surface_fn
-//                .get_physical_device_surface_present_modes(physical_device, surface_details.surface)
-//                .map_err(|_| "Couldn't get physical device surface present modes")?;
-//            let formats = surface_details
-//                .surface_fn
-//                .get_physical_device_surface_formats(physical_device, surface_details.surface)
-//                .map_err(|_| "Couldn't get physical device surface formats")?;
-//
-//            Ok(SwapchainSupportDetails {
-//                capabilities,
-//                formats,
-//                present_modes,
-//            })
-//        }
-//    }
-//
-//    fn choose_surface_format(&self) -> Result<vk::SurfaceFormatKHR, &'static str> {
-//        if (self.formats.len() == 0) {
-//            return Err("Not enough formats");
-//        }
-//
-//        for format in &self.formats {
-//            if format.format == vk::Format::R8G8B8A8_SRGB
-//                && format.color_space == vk::ColorSpaceKHR::EXTENDED_SRGB_NONLINEAR_EXT
-//            {
-//                return Ok(*format);
-//            }
-//        }
-//        Ok(self.formats[0])
-//    }
-//
-//    fn choose_surface_present_mode(&self) -> Result<vk::PresentModeKHR, &'static str> {
-//        // mailbox more energy consumption, fifo better on small devices
-//        for present_mode in &self.present_modes {
-//            if *present_mode == vk::PresentModeKHR::MAILBOX {
-//                return Ok(*present_mode);
-//            }
-//        }
-//        Ok(vk::PresentModeKHR::FIFO)
-//    }
-//}
 //
 //fn create_allocator(
 //    instance: &ash::Instance,
@@ -153,30 +96,6 @@ use winit::{
 //        .map_err(|_| "Couldn't create surface")
 //    }
 //}
-//
-//fn choose_swapchain_extent(
-//    capabilities: &vk::SurfaceCapabilitiesKHR,
-//    old_width: u32,
-//    old_height: u32,
-//) -> Result<vk::Extent2D, &'static str> {
-//    if (capabilities.current_extent.width != u32::MAX) {
-//        return Ok(capabilities.current_extent);
-//    } else {
-//        let width = num::clamp(
-//            old_width,
-//            capabilities.min_image_extent.width,
-//            capabilities.max_image_extent.width,
-//        );
-//
-//        let height = num::clamp(
-//            old_height,
-//            capabilities.min_image_extent.height,
-//            capabilities.max_image_extent.height,
-//        );
-//        return Ok(vk::Extent2D { width, height });
-//    }
-//}
-//
 //fn get_image_count(physical_device: vk::PhysicalDevice, surface_details: &SurfaceDetails) -> u32 {
 //    let swapchain_support_details =
 //        SwapchainSupportDetails::new(physical_device, surface_details).unwrap();
@@ -191,48 +110,6 @@ use winit::{
 //        return image_count;
 //    }
 //}
-//
-//fn create_swapchain(
-//    instance: &ash::Instance,
-//    device: &ash::Device,
-//    physical_device: vk::PhysicalDevice,
-//    surface_details: &SurfaceDetails,
-//    width: u32,
-//    height: u32,
-//) -> Result<vk::SwapchainKHR, &'static str> {
-//    let swapchain_support_details = SwapchainSupportDetails::new(physical_device, surface_details)?;
-//    let present_mode = swapchain_support_details.choose_surface_present_mode()?;
-//
-//    let format = swapchain_support_details.choose_surface_format()?;
-//    let extent = choose_swapchain_extent(&swapchain_support_details.capabilities, width, height)?;
-//
-//    let image_count = get_image_count(physical_device, surface_details);
-//
-//    let swapchain_create_info = vk::SwapchainCreateInfoKHR::builder()
-//        .surface(surface_details.surface)
-//        .min_image_count(image_count)
-//        .image_format(format.format)
-//        .image_color_space(format.color_space)
-//        .image_extent(extent)
-//        .image_array_layers(1)
-//        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
-//        .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
-//        .pre_transform(swapchain_support_details.capabilities.current_transform)
-//        .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-//        .present_mode(present_mode)
-//        .clipped(true)
-//        .old_swapchain(vk::SwapchainKHR::null());
-//
-//    let swapchain_fn = ash::extensions::khr::Swapchain::new(instance, device);
-//
-//    let swapchain = unsafe {
-//        swapchain_fn
-//            .create_swapchain(&swapchain_create_info, None)
-//            .map_err(|_| "Couldn't create swapchain")
-//    };
-//    swapchain
-//}
-//
 //fn get_swapchain_images(
 //    instance: &ash::Instance,
 //    device: &ash::Device,
@@ -246,43 +123,6 @@ use winit::{
 //    }
 //}
 //
-////TODO: fix error handling
-//fn create_image_views(
-//    device: &ash::Device,
-//    swapchain_images: &Vec<vk::Image>,
-//    format: vk::Format,
-//) -> Result<Vec<vk::ImageView>, &'static str> {
-//    let error = format!("Couldn't create image view").as_str();
-//    let mut image_views: Vec<vk::ImageView> = vec![];
-//    for i in 0..swapchain_images.len() {
-//        let component_mapping = vk::ComponentMapping::builder()
-//            .r(vk::ComponentSwizzle::IDENTITY)
-//            .g(vk::ComponentSwizzle::IDENTITY)
-//            .b(vk::ComponentSwizzle::IDENTITY)
-//            .a(vk::ComponentSwizzle::IDENTITY)
-//            .build();
-//
-//        let subresource_range = vk::ImageSubresourceRange::builder()
-//            .aspect_mask(vk::ImageAspectFlags::COLOR)
-//            .base_mip_level(0)
-//            .level_count(1)
-//            .base_array_layer(0)
-//            .layer_count(1)
-//            .build();
-//
-//        let image_view_create_info = vk::ImageViewCreateInfo::builder()
-//            .image(swapchain_images[i])
-//            .view_type(vk::ImageViewType::TYPE_2D)
-//            .format(format)
-//            .components(component_mapping)
-//            .subresource_range(subresource_range)
-//            .build();
-//
-//        image_views
-//            .push(unsafe { device.create_image_view(&image_view_create_info, None) }.unwrap());
-//    }
-//    Ok(image_views)
-//}
 //
 //fn create_shader_module(
 //    device: &ash::Device,
@@ -917,9 +757,9 @@ struct SwapchainSupportDetails {
 struct SwapchainDetails {
     swapchain_loader: ash::extensions::khr::Swapchain,
     swapchain: vk::SwapchainKHR,
-    swapchain_images: Vec<vk::Image>,
-    swapchain_format: vk::Format,
-    swapchain_extent: vk::Extent2D,
+    images: Vec<vk::Image>,
+    format: vk::Format,
+    extent: vk::Extent2D,
 }
 
 pub struct App {
@@ -939,6 +779,7 @@ pub struct App {
     present_queue: vk::Queue,
 
     swapchain_details: SwapchainDetails,
+    swapchain_image_views: Vec<vk::ImageView>,
 }
 
 impl App {
@@ -981,6 +822,8 @@ impl App {
             &queue_indices,
         );
 
+        let swapchain_image_views = App::create_image_views(&device, &swapchain_details);
+
         Ok(App {
             window,
             instance,
@@ -993,6 +836,7 @@ impl App {
             graphics_queue,
             present_queue,
             swapchain_details,
+            swapchain_image_views,
         })
     }
 
@@ -1400,9 +1244,9 @@ impl App {
         SwapchainDetails {
             swapchain_loader,
             swapchain,
-            swapchain_format: surface_format.format,
-            swapchain_extent: extent,
-            swapchain_images,
+            format: surface_format.format,
+            extent,
+            images: swapchain_images,
         }
     }
 
@@ -1453,6 +1297,68 @@ impl App {
                 ),
             }
         }
+    }
+
+    fn create_image_views(
+        device: &ash::Device,
+        swapchain_details: &SwapchainDetails,
+    ) -> Vec<vk::ImageView> {
+        let mut image_views: Vec<vk::ImageView> = vec![];
+
+        for &image in swapchain_details.images.iter() {
+            let component_mapping = vk::ComponentMapping::builder()
+                .r(vk::ComponentSwizzle::IDENTITY)
+                .g(vk::ComponentSwizzle::IDENTITY)
+                .b(vk::ComponentSwizzle::IDENTITY)
+                .a(vk::ComponentSwizzle::IDENTITY)
+                .build();
+
+            let subresource_range = vk::ImageSubresourceRange::builder()
+                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                .base_mip_level(0)
+                .level_count(1)
+                .base_array_layer(0)
+                .layer_count(1)
+                .build();
+
+            let image_view_create_info = vk::ImageViewCreateInfo::builder()
+                .image(image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(swapchain_details.format)
+                .components(component_mapping)
+                .subresource_range(subresource_range)
+                .build();
+            //            let imageview_create_info = vk::ImageViewCreateInfo {
+            //                s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
+            //                p_next: ptr::null(),
+            //                flags: vk::ImageViewCreateFlags::empty(),
+            //                view_type: vk::ImageViewType::TYPE_2D,
+            //                format: surface_format,
+            //                components: vk::ComponentMapping {
+            //                    r: vk::ComponentSwizzle::IDENTITY,
+            //                    g: vk::ComponentSwizzle::IDENTITY,
+            //                    b: vk::ComponentSwizzle::IDENTITY,
+            //                    a: vk::ComponentSwizzle::IDENTITY,
+            //                },
+            //                subresource_range: vk::ImageSubresourceRange {
+            //                    aspect_mask: vk::ImageAspectFlags::COLOR,
+            //                    base_mip_level: 0,
+            //                    level_count: 1,
+            //                    base_array_layer: 0,
+            //                    layer_count: 1,
+            //                },
+            //                image,
+            //            };
+
+            let image_view = unsafe {
+                device
+                    .create_image_view(&image_view_create_info, None)
+                    .expect("Couldn't create image view.")
+            };
+            image_views.push(image_view);
+        }
+
+        image_views
     }
 
     fn draw_frame(&self) {}
