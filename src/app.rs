@@ -19,107 +19,8 @@ use winit::{
     dpi::PhysicalSize, event, event::Event, event_loop::EventLoop, window::Window,
     window::WindowBuilder,
 };
-//
-//struct SurfaceDetails {
-//    surface_fn: ash::extensions::khr::Surface,
-//    surface: vk::SurfaceKHR,
-//}
-//
-//fn get_surface_extensions(
-//    event_loop: &EventLoop<()>,
-//) -> Result<&'static [*const c_char], &'static str> {
-//    ash_window::enumerate_required_extensions(event_loop.raw_display_handle())
-//        .map_err(|_| "Couldn't enumerate required extensions")
-//}
-//
-//// TODO: fix extensions vec
-//fn create_instance(
-//    entry: &ash::Entry,
-//    extension_names: Option<&'static [*const c_char]>,
-//) -> Result<ash::Instance, &'static str> {
-//    let application_info = vk::ApplicationInfo::builder().api_version(vk::API_VERSION_1_3);
-//    let create_info = if let Some(ext_names) = extension_names {
-//        vk::InstanceCreateInfo::builder()
-//            .application_info(&application_info)
-//            .enabled_extension_names(ext_names)
-//    } else {
-//        vk::InstanceCreateInfo::builder().application_info(&application_info)
-//    };
-//    unsafe { entry.create_instance(&create_info, None) }.map_err(|_| "Couldn't create instance")
-//}
-//
-//// TODO: add physical device rating for selecting gpus, add checking for graphics bit
-//fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice, &'static str> {
-//    unsafe {
-//        instance
-//            .enumerate_physical_devices()
-//            .map_err(|_| "couldn't enumerate physical devices.")
-//    }?
-//    .into_iter()
-//    .filter(|physical_device| {
-//        //todo: fix checking for swapchain extension
-//        // let extension_properties =
-//        //     unsafe { instance.enumerate_device_extension_properties(*physical_device) }
-//        //         .map_err(|_| "couldn't enumerate device extension properties")
-//        //         .unwrap();
-//        // for property in extension_properties {
-//        //     println!("{:?}", property);
-//        // }
-//        let current_features = unsafe { instance.get_physical_device_features(*physical_device) };
-//        let current_properties =
-//            unsafe { instance.get_physical_device_properties(*physical_device) };
-//        current_features.sample_rate_shading != 0 // && current_properties.device_type == vk::physicaldevicetype::discrete_gpu
-//    })
-//    .next()
-//    .ok_or_else(|| "no physical devices available.")
-//}
-//
-//fn choose_queue_family_index(
-//    instance: &ash::Instance,
-//    physical_device: vk::PhysicalDevice,
-//    surface_details: &SurfaceDetails,
-//) -> Result<usize, &'static str> {
-//    let swapchain_support_details = SwapchainSupportDetails::new(physical_device, surface_details)?;
-//    if swapchain_support_details.formats.len() == 0
-//        || swapchain_support_details.present_modes.len() == 0
-//    {
-//        return Err("Not enough formats and/or present modes");
-//    }
-//    let mut queue_family_properties =
-//        unsafe { instance.get_physical_device_queue_family_properties(physical_device) }
-//            .into_iter()
-//            .enumerate()
-//            .filter(|queue_family_properties| {
-//                queue_family_properties
-//                    .1
-//                    .queue_flags
-//                    .intersects(vk::QueueFlags::GRAPHICS)
-//            })
-//            .collect::<Vec<_>>();
-//
-//    // TODO: use filter_map instead
-//    queue_family_properties
-//        .into_iter()
-//        .filter(|enumerated_queue| unsafe {
-//            surface_details
-//                .surface_fn
-//                .get_physical_device_surface_support(
-//                    physical_device,
-//                    enumerated_queue.0 as u32,
-//                    surface_details.surface,
-//                )
-//                .unwrap()
-//        })
-//        .map(|enumerated_queue| enumerated_queue.0)
-//        .next()
-//        .ok_or_else(|| "Couldn't return queue family index")
-//}
-//
-//
-//fn get_queue_at_index(device: &ash::Device, index: u32) -> vk::Queue {
-//    unsafe { device.get_device_queue(index, 0) }
-//}
-//
+
+
 //struct SwapchainSupportDetails {
 //    capabilities: vk::SurfaceCapabilitiesKHR,
 //    formats: Vec<vk::SurfaceFormatKHR>,
@@ -982,12 +883,12 @@ impl QueueFamilyIndices {
     }
 }
 
-struct SurfaceItems {
+struct SurfaceDetails {
     surface: vk::SurfaceKHR,
     surface_loader: ash::extensions::khr::Surface,
 }
 
-impl SurfaceItems {
+impl SurfaceDetails {
     fn new(entry: &ash::Entry, instance: &ash::Instance, window: &Window) -> Self {
         let surface = unsafe {
             use std::ptr;
@@ -1007,7 +908,7 @@ impl SurfaceItems {
         };
 
         let surface_loader = ash::extensions::khr::Surface::new(entry, instance);
-        SurfaceItems {
+        SurfaceDetails {
             surface,
             surface_loader,
         }
@@ -1021,7 +922,7 @@ pub struct App {
     debug_utils_loader: ash::extensions::ext::DebugUtils,
     debug_messenger: vk::DebugUtilsMessengerEXT,
 
-    surface: SurfaceItems,
+    surface: SurfaceDetails,
 
     physical_device: vk::PhysicalDevice,
     queue_indices: QueueFamilyIndices,
@@ -1043,11 +944,11 @@ impl App {
         let window = App::init_window(&event_loop, WIDTH, HEIGHT)?;
 
         let entry = unsafe { ash::Entry::load() }.map_err(|_| "Coudn't create Vulkan entry")?;
-        let surface_extensions = App::get_surface_extensions(event_loop)?;
+        //let surface_extensions = App::get_surface_extensions(event_loop)?;
 
         let instance = App::create_instance(&entry, surface_extensions)?;
 
-        let surface = SurfaceItems::new(&entry, &instance, &window);
+        let surface = SurfaceDetails::new(&entry, &instance, &window);
 
         let (debug_utils_loader, debug_messenger) = App::setup_debug_utils(&entry, &instance);
 
@@ -1216,7 +1117,7 @@ impl App {
 
     fn pick_physical_device(
         instance: &ash::Instance,
-        surface: &SurfaceItems,
+        surface: &SurfaceDetails,
     ) -> Result<vk::PhysicalDevice, &'static str> {
         unsafe {
             instance
@@ -1232,7 +1133,7 @@ impl App {
     fn is_device_suitable(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-        surface: &SurfaceItems,
+        surface: &SurfaceDetails,
     ) -> bool {
         let indices = App::find_queue_family(instance, physical_device, surface);
         return indices.is_complete();
@@ -1241,7 +1142,7 @@ impl App {
     fn find_queue_family(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-        surface: &SurfaceItems,
+        surface: &SurfaceDetails,
     ) -> QueueFamilyIndices {
         let queue_families =
             unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
@@ -1285,7 +1186,7 @@ impl App {
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
         indices: &QueueFamilyIndices,
-        surface: &SurfaceItems,
+        surface: &SurfaceDetails,
     ) -> Result<ash::Device, &'static str> {
         use std::collections::HashSet;
         let mut unique_queue_families = HashSet::new();
