@@ -1,5 +1,4 @@
 //use gpu_allocator::{vulkan::*, MemoryLocation};
-//use std::io::prelude::*;
 //use std::path::Path;
 //use std::time;
 
@@ -11,6 +10,7 @@ use ash::vk;
 use raw_window_handle::HasRawDisplayHandle;
 use std::collections::HashSet;
 use std::ffi::{c_char, CStr, CString};
+use std::io::prelude::*;
 use std::os::raw::c_void;
 use winit::{
     dpi::PhysicalSize, event, event::Event, event_loop::EventLoop, window::Window,
@@ -124,166 +124,8 @@ use winit::{
 //}
 //
 //
-//fn create_shader_module(
-//    device: &ash::Device,
-//    bytes: &Vec<u8>,
-//) -> Result<vk::ShaderModule, &'static str> {
-//    let shader_module_create_info = vk::ShaderModuleCreateInfo {
-//        s_type: vk::StructureType::SHADER_MODULE_CREATE_INFO,
-//        p_next: ptr::null(),
-//        flags: vk::ShaderModuleCreateFlags::empty(),
-//        code_size: bytes.len(),
-//        p_code: bytes.as_ptr() as *const u32,
-//    };
-//    unsafe {
-//        device
-//            .create_shader_module(&shader_module_create_info, None)
-//            .map_err(|_| "Couldn't create shader module.")
-//    }
-//}
 //
-//fn read_shader_code(file_name: &str) -> Result<Vec<u8>, &'static str> {
-//    let path = std::path::Path::new(file_name);
-//    let file = std::fs::File::open(path).expect(&format!("Failed to find spv file at {:?}", path));
-//    Ok(file.bytes().flatten().collect::<Vec<u8>>())
-//}
 //
-//fn create_graphics_pipelines(
-//    device: &ash::Device,
-//    swapchain_extent: &vk::Extent2D,
-//    swapchain_image_format: &vk::SurfaceFormatKHR,
-//    render_pass: &vk::RenderPass,
-//) -> Result<(Vec<vk::Pipeline>, vk::PipelineLayout), &'static str> {
-//    //let vertex_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
-//    //let frag_module = create_shader_module(device, "../shaders/vert.spv").unwrap();
-//    let vert_shader_code = read_shader_code("../shaders/spv/vert.spv")?;
-//    let frag_shader_code = read_shader_code("../shaders/spv/frag.spv")?;
-//
-//    let vertex_module = create_shader_module(device, &vert_shader_code)?;
-//    let frag_module = create_shader_module(device, &frag_shader_code)?;
-//
-//    let main_function_name = CString::new("main").expect("Couldn't make c string");
-//
-//    let vert_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
-//        .name(main_function_name.as_c_str())
-//        .stage(vk::ShaderStageFlags::VERTEX)
-//        .module(vertex_module)
-//        .build();
-//
-//    let frag_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
-//        .name(main_function_name.as_c_str())
-//        .stage(vk::ShaderStageFlags::FRAGMENT)
-//        .module(frag_module)
-//        .build();
-//
-//    let shader_stages = [vert_shader_stage, frag_shader_stage];
-//
-//    //     viewport, scissor for now, multiple viewports require setting feature
-//    let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-//    let pipeline_dyn_states = vk::PipelineDynamicStateCreateInfo::builder()
-//        .dynamic_states(&dynamic_states)
-//        .build();
-//
-//    let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default();
-//    let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
-//        primitive_restart_enable: 0,
-//        topology: vk::PrimitiveTopology::TRIANGLE_LIST,
-//        ..Default::default()
-//    };
-//
-//    let viewports = [vk::Viewport {
-//        width: swapchain_extent.width as f32,
-//        height: swapchain_extent.height as f32,
-//        max_depth: 1.0,
-//        ..Default::default()
-//    }];
-//
-//    let scissors = [vk::Rect2D {
-//        extent: *swapchain_extent,
-//        ..Default::default()
-//    }];
-//
-//    let viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
-//        .viewports(&viewports)
-//        .scissors(&scissors)
-//        .build();
-//
-//    // most of the other options for each setting requires a gpu feature to be set
-//    let rasterization_create_info = vk::PipelineRasterizationStateCreateInfo::builder()
-//        .depth_clamp_enable(false)
-//        .rasterizer_discard_enable(false)
-//        .polygon_mode(vk::PolygonMode::FILL)
-//        .line_width(1.0)
-//        .cull_mode(vk::CullModeFlags::BACK)
-//        .front_face(vk::FrontFace::CLOCKWISE)
-//        .depth_bias_enable(false)
-//        .build();
-//
-//    let multisample_state_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
-//        .sample_shading_enable(false)
-//        .rasterization_samples(vk::SampleCountFlags::TYPE_1)
-//        .min_sample_shading(1.0)
-//        .alpha_to_coverage_enable(false)
-//        .alpha_to_one_enable(false)
-//        .build();
-//
-//    // Depth/stencil testing goes here
-//
-//    //TODO: fix for coloring based on opacity
-//    let color_blend_attachment_state_create_info = vk::PipelineColorBlendAttachmentState::builder()
-//        .color_write_mask(vk::ColorComponentFlags::RGBA)
-//        .blend_enable(false)
-//        .src_color_blend_factor(vk::BlendFactor::ONE)
-//        .dst_color_blend_factor(vk::BlendFactor::ZERO)
-//        .color_blend_op(vk::BlendOp::ADD)
-//        .src_alpha_blend_factor(vk::BlendFactor::ONE)
-//        .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-//        .alpha_blend_op(vk::BlendOp::ADD)
-//        .build();
-//
-//    let color_blend_state_create_info = vk::PipelineColorBlendStateCreateInfo::builder()
-//        .logic_op_enable(false)
-//        .logic_op(vk::LogicOp::COPY)
-//        .attachments(&[color_blend_attachment_state_create_info])
-//        .blend_constants([0.0, 0.0, 0.0, 0.0])
-//        .build();
-//
-//    let pipeline_layout_create_info = vk::PipelineLayoutCreateInfo::default();
-//
-//    let pipeline_layout = unsafe {
-//        device
-//            .create_pipeline_layout(&pipeline_layout_create_info, None)
-//            .expect("Failed to create pipeline layout!")
-//    };
-//
-//    let pipeline_info = [vk::GraphicsPipelineCreateInfo::builder()
-//        .stages(&shader_stages)
-//        .vertex_input_state(&vertex_input_info)
-//        .input_assembly_state(&input_assembly_state)
-//        .viewport_state(&viewport_state_create_info)
-//        .rasterization_state(&rasterization_create_info)
-//        .multisample_state(&multisample_state_create_info)
-//        .color_blend_state(&color_blend_state_create_info)
-//        .layout(pipeline_layout)
-//        .render_pass(*render_pass)
-//        .subpass(0)
-//        .base_pipeline_handle(vk::Pipeline::null())
-//        .base_pipeline_index(-1)
-//        .dynamic_state(&pipeline_dyn_states)
-//        .build()];
-//
-//    let graphics_pipelines = unsafe {
-//        device
-//            .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_info, None)
-//            .expect("Couldn't create graphics pipeline.")
-//    };
-//
-//    unsafe {
-//        device.destroy_shader_module(vertex_module, None);
-//        device.destroy_shader_module(frag_module, None);
-//    }
-//    Ok((graphics_pipelines, pipeline_layout))
-//}
 //
 //fn create_render_pass(
 //    device: &ash::Device,
@@ -1328,28 +1170,6 @@ impl App {
                 .components(component_mapping)
                 .subresource_range(subresource_range)
                 .build();
-            //            let imageview_create_info = vk::ImageViewCreateInfo {
-            //                s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
-            //                p_next: ptr::null(),
-            //                flags: vk::ImageViewCreateFlags::empty(),
-            //                view_type: vk::ImageViewType::TYPE_2D,
-            //                format: surface_format,
-            //                components: vk::ComponentMapping {
-            //                    r: vk::ComponentSwizzle::IDENTITY,
-            //                    g: vk::ComponentSwizzle::IDENTITY,
-            //                    b: vk::ComponentSwizzle::IDENTITY,
-            //                    a: vk::ComponentSwizzle::IDENTITY,
-            //                },
-            //                subresource_range: vk::ImageSubresourceRange {
-            //                    aspect_mask: vk::ImageAspectFlags::COLOR,
-            //                    base_mip_level: 0,
-            //                    level_count: 1,
-            //                    base_array_layer: 0,
-            //                    layer_count: 1,
-            //                },
-            //                image,
-            //            };
-
             let image_view = unsafe {
                 device
                     .create_image_view(&image_view_create_info, None)
@@ -1361,12 +1181,160 @@ impl App {
         image_views
     }
 
+    fn create_shader_module(device: &ash::Device, bytes: &Vec<u8>) -> vk::ShaderModule {
+        let shader_module_create_info = vk::ShaderModuleCreateInfo {
+            s_type: vk::StructureType::SHADER_MODULE_CREATE_INFO,
+            p_next: std::ptr::null(),
+            flags: vk::ShaderModuleCreateFlags::empty(),
+            code_size: bytes.len(),
+            p_code: bytes.as_ptr() as *const u32,
+        };
+        unsafe {
+            device
+                .create_shader_module(&shader_module_create_info, None)
+                .expect("Couldn't create shader module.")
+        }
+    }
+
+    fn create_graphics_pipeline(device: &ash::Device) {
+        let vert_shader_code = read_shader_code("../shaders/spv/vert.spv");
+        let frag_shader_code = read_shader_code("../shaders/spv/frag.spv");
+
+        let vertex_module = App::create_shader_module(device, &vert_shader_code);
+        let frag_module = App::create_shader_module(device, &frag_shader_code);
+
+        let main_function_name = CString::new("main").expect("Couldn't make c string");
+
+        let vert_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
+            .name(main_function_name.as_c_str())
+            .stage(vk::ShaderStageFlags::VERTEX)
+            .module(vertex_module)
+            .build();
+
+        let frag_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
+            .name(main_function_name.as_c_str())
+            .stage(vk::ShaderStageFlags::FRAGMENT)
+            .module(frag_module)
+            .build();
+
+        let shader_stages = [vert_shader_stage, frag_shader_stage];
+        //
+        //    //     viewport, scissor for now, multiple viewports require setting feature
+        //    let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+        //    let pipeline_dyn_states = vk::PipelineDynamicStateCreateInfo::builder()
+        //        .dynamic_states(&dynamic_states)
+        //        .build();
+        //
+        //    let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default();
+        //    let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
+        //        primitive_restart_enable: 0,
+        //        topology: vk::PrimitiveTopology::TRIANGLE_LIST,
+        //        ..Default::default()
+        //    };
+        //
+        //    let viewports = [vk::Viewport {
+        //        width: swapchain_extent.width as f32,
+        //        height: swapchain_extent.height as f32,
+        //        max_depth: 1.0,
+        //        ..Default::default()
+        //    }];
+        //
+        //    let scissors = [vk::Rect2D {
+        //        extent: *swapchain_extent,
+        //        ..Default::default()
+        //    }];
+        //
+        //    let viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
+        //        .viewports(&viewports)
+        //        .scissors(&scissors)
+        //        .build();
+        //
+        //    // most of the other options for each setting requires a gpu feature to be set
+        //    let rasterization_create_info = vk::PipelineRasterizationStateCreateInfo::builder()
+        //        .depth_clamp_enable(false)
+        //        .rasterizer_discard_enable(false)
+        //        .polygon_mode(vk::PolygonMode::FILL)
+        //        .line_width(1.0)
+        //        .cull_mode(vk::CullModeFlags::BACK)
+        //        .front_face(vk::FrontFace::CLOCKWISE)
+        //        .depth_bias_enable(false)
+        //        .build();
+        //
+        //    let multisample_state_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
+        //        .sample_shading_enable(false)
+        //        .rasterization_samples(vk::SampleCountFlags::TYPE_1)
+        //        .min_sample_shading(1.0)
+        //        .alpha_to_coverage_enable(false)
+        //        .alpha_to_one_enable(false)
+        //        .build();
+        //
+        //    // Depth/stencil testing goes here
+        //
+        //    //TODO: fix for coloring based on opacity
+        //    let color_blend_attachment_state_create_info = vk::PipelineColorBlendAttachmentState::builder()
+        //        .color_write_mask(vk::ColorComponentFlags::RGBA)
+        //        .blend_enable(false)
+        //        .src_color_blend_factor(vk::BlendFactor::ONE)
+        //        .dst_color_blend_factor(vk::BlendFactor::ZERO)
+        //        .color_blend_op(vk::BlendOp::ADD)
+        //        .src_alpha_blend_factor(vk::BlendFactor::ONE)
+        //        .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+        //        .alpha_blend_op(vk::BlendOp::ADD)
+        //        .build();
+        //
+        //    let color_blend_state_create_info = vk::PipelineColorBlendStateCreateInfo::builder()
+        //        .logic_op_enable(false)
+        //        .logic_op(vk::LogicOp::COPY)
+        //        .attachments(&[color_blend_attachment_state_create_info])
+        //        .blend_constants([0.0, 0.0, 0.0, 0.0])
+        //        .build();
+        //
+        //    let pipeline_layout_create_info = vk::PipelineLayoutCreateInfo::default();
+        //
+        //    let pipeline_layout = unsafe {
+        //        device
+        //            .create_pipeline_layout(&pipeline_layout_create_info, None)
+        //            .expect("Failed to create pipeline layout!")
+        //    };
+        //
+        //    let pipeline_info = [vk::GraphicsPipelineCreateInfo::builder()
+        //        .stages(&shader_stages)
+        //        .vertex_input_state(&vertex_input_info)
+        //        .input_assembly_state(&input_assembly_state)
+        //        .viewport_state(&viewport_state_create_info)
+        //        .rasterization_state(&rasterization_create_info)
+        //        .multisample_state(&multisample_state_create_info)
+        //        .color_blend_state(&color_blend_state_create_info)
+        //        .layout(pipeline_layout)
+        //        .render_pass(*render_pass)
+        //        .subpass(0)
+        //        .base_pipeline_handle(vk::Pipeline::null())
+        //        .base_pipeline_index(-1)
+        //        .dynamic_state(&pipeline_dyn_states)
+        //        .build()];
+        //
+        //    let graphics_pipelines = unsafe {
+        //        device
+        //            .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_info, None)
+        //            .expect("Couldn't create graphics pipeline.")
+        //    };
+        //
+            unsafe {
+                device.destroy_shader_module(vertex_module, None);
+                device.destroy_shader_module(frag_module, None);
+            }
+        //    Ok((graphics_pipelines, pipeline_layout))
+    }
+
     fn draw_frame(&self) {}
 }
 
 impl Drop for App {
     fn drop(&mut self) {
         unsafe {
+            for &imageview in self.swapchain_image_views.iter() {
+                self.device.destroy_image_view(imageview, None);
+            }
             self.device.destroy_device(None);
             self.surface_details
                 .surface_loader
@@ -1422,10 +1390,16 @@ fn populate_debug_messenger_create_info() -> vk::DebugUtilsMessengerCreateInfoEX
     }
 }
 
-pub fn array_to_string(array: &[c_char]) -> &str {
+fn array_to_string(array: &[c_char]) -> &str {
     let raw_string = unsafe { CStr::from_ptr(array.as_ptr()) };
 
     raw_string
         .to_str()
         .expect("Failed to convert vulkan raw string.")
+}
+
+fn read_shader_code(file_name: &str) -> Vec<u8> {
+    let path = std::path::Path::new(file_name);
+    let file = std::fs::File::open(path).expect(&format!("Failed to find spv file at {:?}", path));
+    file.bytes().flatten().collect::<Vec<u8>>()
 }
