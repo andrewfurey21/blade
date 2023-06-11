@@ -124,61 +124,6 @@ use winit::{
 //}
 //
 //
-//
-//
-//
-//
-//fn create_framebuffers(
-//    device: &ash::Device,
-//    image_views: &Vec<vk::ImageView>,
-//    render_pass: &vk::RenderPass,
-//    swapchain_extent: &vk::Extent2D,
-//) -> Result<Vec<vk::Framebuffer>, &'static str> {
-//    let mut swapchain_buffers: Vec<vk::Framebuffer> = vec![];
-//    for image_view in image_views {
-//        let attachments = [*image_view];
-//
-//        let framebuffer_info = vk::FramebufferCreateInfo::builder()
-//            .render_pass(*render_pass)
-//            .attachments(&attachments)
-//            .width(swapchain_extent.width)
-//            .height(swapchain_extent.height)
-//            .layers(1)
-//            .build();
-//
-//        let framebuffer = unsafe { device.create_framebuffer(&framebuffer_info, None) }
-//            .map_err(|_| "Couldn't create framebuffer.")?;
-//        swapchain_buffers.push(framebuffer);
-//    }
-//    Ok(swapchain_buffers)
-//}
-//
-//fn create_command_pool(
-//    device: &ash::Device,
-//    queue_index: u32,
-//) -> Result<vk::CommandPool, &'static str> {
-//    let create_info = vk::CommandPoolCreateInfo::builder()
-//        .queue_family_index(queue_index)
-//        .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-//
-//    unsafe { device.create_command_pool(&create_info, None) }
-//        .map_err(|_| "Couldn't create command pool")
-//}
-//
-//fn create_command_buffer(
-//    device: &ash::Device,
-//    command_pool: vk::CommandPool,
-//) -> Result<vk::CommandBuffer, &'static str> {
-//    let create_info = vk::CommandBufferAllocateInfo::builder()
-//        .level(vk::CommandBufferLevel::PRIMARY)
-//        .command_pool(command_pool)
-//        .command_buffer_count(1);
-//
-//    unsafe { device.allocate_command_buffers(&create_info) }
-//        .map_err(|_| "Couldn't create command buffers.")?
-//        .into_iter()
-//        .next()
-//        .ok_or_else(|| "No command buffer found.")
 //}
 //
 //fn record_command_buffer(
@@ -561,6 +506,12 @@ struct SwapchainDetails {
     extent: vk::Extent2D,
 }
 
+struct SyncObjects {
+    image_available_semaphores: Vec<vk::Semaphore>,
+    render_finished_semaphores: Vec<vk::Semaphore>,
+    inflight_fences: Vec<vk::Fence>,
+}
+
 pub struct App {
     window: Window,
     instance: ash::Instance,
@@ -579,10 +530,16 @@ pub struct App {
 
     swapchain_details: SwapchainDetails,
     swapchain_image_views: Vec<vk::ImageView>,
+    swapchain_framebuffers: Vec<vk::Framebuffer>,
 
     render_pass: vk::RenderPass,
     pipeline_layout: vk::PipelineLayout,
     graphics_pipelines: Vec<vk::Pipeline>,
+
+    command_pool: vk::CommandPool,
+    command_buffers: Vec<vk::CommandBuffer>,
+    sync_objects: SyncObjects,
+    frame: usize,
 }
 
 impl App {
@@ -631,6 +588,25 @@ impl App {
         let (graphics_pipelines, pipeline_layout) =
             App::create_graphics_pipelines(&device, &swapchain_details, &render_pass);
 
+        let swapchain_framebuffers = App::create_framebuffers(
+            &device,
+            &swapchain_image_views,
+            &render_pass,
+            &swapchain_details,
+        );
+
+        let command_pool = App::create_command_pool(&device, &queue_indices);
+        let command_buffers = App::create_command_buffers(
+            &device,
+            &command_pool,
+            &graphics_pipelines,
+            &swapchain_framebuffers,
+            &render_pass,
+            &swapchain_details,
+        );
+
+        let sync_objects = App::create_sync_objects(&device);
+
         Ok(App {
             window,
             instance,
@@ -644,13 +620,18 @@ impl App {
             present_queue,
             swapchain_details,
             swapchain_image_views,
+            swapchain_framebuffers,
             render_pass,
             graphics_pipelines,
             pipeline_layout,
+            command_pool,
+            command_buffers,
+            sync_objects,
+            frame: 0,
         })
     }
 
-    pub fn run(self, event_loop: EventLoop<()>) -> ! {
+    pub fn run(mut self, event_loop: EventLoop<()>) -> ! {
         event_loop.run(move |event, _, control_flow| match event {
             Event::WindowEvent { window_id, event } => {
                 if window_id == self.window.id() {
@@ -1236,9 +1217,9 @@ impl App {
         let shader_stages = [vert_shader_stage, frag_shader_stage];
 
         //     viewport, scissor for now, multiple viewports require setting feature
-        let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+        //let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
         let pipeline_dyn_states = vk::PipelineDynamicStateCreateInfo::builder()
-            .dynamic_states(&dynamic_states)
+            //   .dynamic_states(&dynamic_states)
             .build();
 
         let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default();
@@ -1343,7 +1324,235 @@ impl App {
         (graphics_pipelines, pipeline_layout)
     }
 
-    fn draw_frame(&self) {}
+    fn create_framebuffers(
+        device: &ash::Device,
+        image_views: &Vec<vk::ImageView>,
+        render_pass: &vk::RenderPass,
+        swapchain_details: &SwapchainDetails,
+    ) -> Vec<vk::Framebuffer> {
+        let mut swapchain_buffers: Vec<vk::Framebuffer> = vec![];
+        for image_view in image_views {
+            let attachments = [*image_view];
+
+            let framebuffer_info = vk::FramebufferCreateInfo::builder()
+                .render_pass(*render_pass)
+                .attachments(&attachments)
+                .width(swapchain_details.extent.width)
+                .height(swapchain_details.extent.height)
+                .layers(1)
+                .build();
+
+            let framebuffer = unsafe { device.create_framebuffer(&framebuffer_info, None) }
+                .expect("Couldn't create framebuffer.");
+            swapchain_buffers.push(framebuffer);
+        }
+        swapchain_buffers
+    }
+
+    fn create_command_pool(
+        device: &ash::Device,
+        queue_indices: &QueueFamilyIndices,
+    ) -> vk::CommandPool {
+        let create_info = vk::CommandPoolCreateInfo::builder()
+            .queue_family_index(queue_indices.graphics_family.unwrap())
+            .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+
+        unsafe { device.create_command_pool(&create_info, None) }
+            .expect("Couldn't create command pool")
+    }
+
+    fn create_command_buffers(
+        device: &ash::Device,
+        command_pool: &vk::CommandPool,
+        graphics_pipelines: &Vec<vk::Pipeline>,
+        framebuffers: &Vec<vk::Framebuffer>,
+        render_pass: &vk::RenderPass,
+        swapchain_details: &SwapchainDetails,
+    ) -> Vec<vk::CommandBuffer> {
+        let graphics_pipeline = graphics_pipelines[0];
+
+        let create_info = vk::CommandBufferAllocateInfo::builder()
+            .level(vk::CommandBufferLevel::PRIMARY)
+            .command_pool(*command_pool)
+            .command_buffer_count(1);
+
+        let command_buffers = unsafe { device.allocate_command_buffers(&create_info) }
+            .expect("Couldn't create command buffers.");
+
+        for (i, &command_buffer) in command_buffers.iter().enumerate() {
+            let command_buffer_begin_info = vk::CommandBufferBeginInfo {
+                s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
+                p_next: std::ptr::null(),
+                p_inheritance_info: std::ptr::null(),
+                flags: vk::CommandBufferUsageFlags::SIMULTANEOUS_USE,
+            };
+
+            unsafe {
+                device
+                    .begin_command_buffer(command_buffer, &command_buffer_begin_info)
+                    .expect("Couldn't begin recording command buffer at beginning.");
+            }
+
+            let clear_values = [vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.0, 0.0, 0.0, 1.0],
+                },
+            }];
+
+            let render_pass_begin_info = vk::RenderPassBeginInfo {
+                s_type: vk::StructureType::RENDER_PASS_BEGIN_INFO,
+                p_next: std::ptr::null(),
+                render_pass: *render_pass,
+                framebuffer: framebuffers[i],
+                render_area: vk::Rect2D {
+                    offset: vk::Offset2D { x: 0, y: 0 },
+                    extent: swapchain_details.extent,
+                },
+                clear_value_count: clear_values.len() as u32,
+                p_clear_values: clear_values.as_ptr(),
+            };
+
+            unsafe {
+                device.cmd_begin_render_pass(
+                    command_buffer,
+                    &render_pass_begin_info,
+                    vk::SubpassContents::INLINE,
+                );
+                device.cmd_bind_pipeline(
+                    command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    graphics_pipeline,
+                );
+                device.cmd_draw(command_buffer, 3, 1, 0, 0);
+
+                device.cmd_end_render_pass(command_buffer);
+
+                device
+                    .end_command_buffer(command_buffer)
+                    .expect("Failed to record Command Buffer at Ending!");
+            }
+        }
+
+        command_buffers
+    }
+
+    fn create_sync_objects(device: &ash::Device) -> SyncObjects {
+        let mut sync_objects = SyncObjects {
+            image_available_semaphores: vec![],
+            render_finished_semaphores: vec![],
+            inflight_fences: vec![],
+        };
+
+        let semaphore_create_info = vk::SemaphoreCreateInfo {
+            s_type: vk::StructureType::SEMAPHORE_CREATE_INFO,
+            p_next: std::ptr::null(),
+            flags: vk::SemaphoreCreateFlags::empty(),
+        };
+
+        let fence_create_info = vk::FenceCreateInfo {
+            s_type: vk::StructureType::FENCE_CREATE_INFO,
+            p_next: std::ptr::null(),
+            flags: vk::FenceCreateFlags::SIGNALED,
+        };
+
+        for _ in 0..MAX_FRAMES_IN_FLIGHT {
+            unsafe {
+                let image_available_semaphore = device
+                    .create_semaphore(&semaphore_create_info, None)
+                    .expect("Failed to create Semaphore Object!");
+
+                let render_finished_semaphore = device
+                    .create_semaphore(&semaphore_create_info, None)
+                    .expect("Failed to create Semaphore Object!");
+
+                let inflight_fence = device
+                    .create_fence(&fence_create_info, None)
+                    .expect("Failed to create Fence Object!");
+
+                sync_objects
+                    .image_available_semaphores
+                    .push(image_available_semaphore);
+                sync_objects
+                    .render_finished_semaphores
+                    .push(render_finished_semaphore);
+                sync_objects.inflight_fences.push(inflight_fence);
+            }
+        }
+
+        sync_objects
+    }
+
+    fn draw_frame(&mut self) {
+        let wait_fences = [self.sync_objects.inflight_fences[self.frame]];
+
+        let (image_index, _is_sub_optimal) = unsafe {
+            self.device
+                .wait_for_fences(&wait_fences, true, std::u64::MAX)
+                .expect("Couldn't wait for fence.");
+
+            self.swapchain_details
+                .swapchain_loader
+                .acquire_next_image(
+                    self.swapchain_details.swapchain,
+                    std::u64::MAX,
+                    self.sync_objects.image_available_semaphores[self.frame],
+                    vk::Fence::null(),
+                )
+                .expect("Failed to acquire next image.")
+        };
+
+        let wait_semaphores = [self.sync_objects.image_available_semaphores[self.frame]];
+        let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+        let signal_semaphores = [self.sync_objects.render_finished_semaphores[self.frame]];
+
+        let submit_infos = [vk::SubmitInfo {
+            s_type: vk::StructureType::SUBMIT_INFO,
+            p_next: std::ptr::null(),
+            wait_semaphore_count: wait_semaphores.len() as u32,
+            p_wait_semaphores: wait_semaphores.as_ptr(),
+            p_wait_dst_stage_mask: wait_stages.as_ptr(),
+            command_buffer_count: 1,
+            p_command_buffers: &self.command_buffers[image_index as usize],
+            signal_semaphore_count: signal_semaphores.len() as u32,
+            p_signal_semaphores: signal_semaphores.as_ptr(),
+        }];
+
+        unsafe {
+            self.device
+                .reset_fences(&wait_fences)
+                .expect("Couldn't to reset fence.");
+
+            self.device
+                .queue_submit(
+                    self.graphics_queue,
+                    &submit_infos,
+                    self.sync_objects.inflight_fences[self.frame],
+                )
+                .expect("Couldn't execute queue submit.");
+        }
+
+        let swapchains = [self.swapchain_details.swapchain];
+
+        let present_info = vk::PresentInfoKHR {
+            s_type: vk::StructureType::PRESENT_INFO_KHR,
+            p_next: std::ptr::null(),
+            wait_semaphore_count: 1,
+            p_wait_semaphores: signal_semaphores.as_ptr(),
+            swapchain_count: 1,
+            p_swapchains: swapchains.as_ptr(),
+            p_image_indices: &image_index,
+            p_results: std::ptr::null_mut(),
+        };
+
+        unsafe {
+            self.swapchain_details
+                .swapchain_loader
+                .queue_present(self.present_queue, &present_info)
+                .expect("Failed to execute queue present.");
+        }
+
+        self.frame = (self.frame + 1) % MAX_FRAMES_IN_FLIGHT;
+    }
 }
 
 impl Drop for App {
