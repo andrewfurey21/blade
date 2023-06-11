@@ -10,7 +10,7 @@
 use crate::constants::*;
 use ash::extensions::ext::DebugUtils;
 use ash::extensions::khr::Surface;
-use ash::extensions::khr::XlibSurface;
+use ash::extensions::khr::WaylandSurface;
 use ash::vk;
 use raw_window_handle::HasRawDisplayHandle;
 use std::ffi::{c_char, CStr, CString};
@@ -991,22 +991,21 @@ impl SurfaceItems {
     fn new(entry: &ash::Entry, instance: &ash::Instance, window: &Window) -> Self {
         let surface = unsafe {
             use std::ptr;
-            use winit::platform::unix::WindowExtUnix;
+            use winit::platform::wayland::WindowExtWayland;
 
-            let x11_display = window.xlib_display().unwrap();
-            let x11_window = window.xlib_window().unwrap();
-            let x11_create_info = vk::XlibSurfaceCreateInfoKHR {
-                s_type: vk::StructureType::XLIB_SURFACE_CREATE_INFO_KHR,
-                p_next: ptr::null(),
-                flags: Default::default(),
-                window: x11_window as vk::Window,
-                dpy: x11_display as *mut vk::Display,
-            };
-            let xlib_surface_loader = XlibSurface::new(entry, instance);
-            xlib_surface_loader
-                .create_xlib_surface(&x11_create_info, None)
+            let wayland_display = window.wayland_display().unwrap();
+            let wayland_surface = window.wayland_surface().unwrap();
+            let wayland_create_info = vk::WaylandSurfaceCreateInfoKHR::builder()
+                .display(wayland_display)
+                .surface(wayland_surface)
+                .build();
+
+            let wayland_surface_loader = WaylandSurface::new(entry, instance);
+            wayland_surface_loader
+                .create_wayland_surface(&wayland_create_info, None)
                 .expect("Failed to create surface.")
         };
+
         let surface_loader = ash::extensions::khr::Surface::new(entry, instance);
         SurfaceItems {
             surface,
@@ -1036,7 +1035,7 @@ impl App {
     const VALIDATION_LAYERS: [&'static str; 1] = ["VK_LAYER_KHRONOS_validation"];
     const REQUIRED_EXTENSION_NAMES: [*const i8; 3] = [
         Surface::name().as_ptr(),
-        XlibSurface::name().as_ptr(),
+        WaylandSurface::name().as_ptr(),
         DebugUtils::name().as_ptr(),
     ];
 
