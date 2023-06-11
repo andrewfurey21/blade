@@ -127,49 +127,6 @@ use winit::{
 //
 //
 //
-//fn create_render_pass(
-//    device: &ash::Device,
-//    swapchain_image_format: &vk::Format,
-//) -> Result<vk::RenderPass, &'static str> {
-//    let attachment_description = vk::AttachmentDescription::builder()
-//        .format(*swapchain_image_format)
-//        .samples(vk::SampleCountFlags::TYPE_1)
-//        .load_op(vk::AttachmentLoadOp::CLEAR)
-//        .store_op(vk::AttachmentStoreOp::STORE)
-//        .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-//        .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-//        .initial_layout(vk::ImageLayout::UNDEFINED)
-//        .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-//        .build();
-//
-//    let color_attachment_ref = vk::AttachmentReference::builder()
-//        .attachment(0)
-//        .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-//        .build();
-//
-//    let dependency = vk::SubpassDependency::builder()
-//        .src_subpass(vk::SUBPASS_EXTERNAL)
-//        .dst_subpass(0)
-//        .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-//        .src_access_mask(vk::AccessFlags::empty())
-//        .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-//        .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-//        .dependency_flags(vk::DependencyFlags::empty());
-//
-//    let subpass = vk::SubpassDescription::builder()
-//        .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-//        .color_attachments(&[color_attachment_ref])
-//        .build();
-//
-//    let render_pass_info = vk::RenderPassCreateInfo::builder()
-//        .attachments(&[attachment_description])
-//        .subpasses(&[subpass])
-//        .dependencies(&[*dependency])
-//        .build();
-//
-//    unsafe { device.create_render_pass(&render_pass_info, None) }
-//        .map_err(|_| "Couldn't create render pass")
-//}
 //
 //fn create_framebuffers(
 //    device: &ash::Device,
@@ -622,6 +579,10 @@ pub struct App {
 
     swapchain_details: SwapchainDetails,
     swapchain_image_views: Vec<vk::ImageView>,
+
+    render_pass: vk::RenderPass,
+    pipeline_layout: vk::PipelineLayout,
+    graphics_pipelines: Vec<vk::Pipeline>,
 }
 
 impl App {
@@ -666,6 +627,10 @@ impl App {
 
         let swapchain_image_views = App::create_image_views(&device, &swapchain_details);
 
+        let render_pass = App::create_render_pass(&device, &swapchain_details);
+        let (graphics_pipelines, pipeline_layout) =
+            App::create_graphics_pipelines(&device, &swapchain_details, &render_pass);
+
         Ok(App {
             window,
             instance,
@@ -679,6 +644,9 @@ impl App {
             present_queue,
             swapchain_details,
             swapchain_image_views,
+            render_pass,
+            graphics_pipelines,
+            pipeline_layout,
         })
     }
 
@@ -1196,9 +1164,57 @@ impl App {
         }
     }
 
-    fn create_graphics_pipeline(device: &ash::Device, swapchain_details: &SwapchainDetails) {
-        let vert_shader_code = read_shader_code("../shaders/spv/vert.spv");
-        let frag_shader_code = read_shader_code("../shaders/spv/frag.spv");
+    fn create_render_pass(
+        device: &ash::Device,
+        swapchain_details: &SwapchainDetails,
+    ) -> vk::RenderPass {
+        let attachment_description = vk::AttachmentDescription::builder()
+            .format(swapchain_details.format)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+            .build();
+
+        let color_attachment_ref = vk::AttachmentReference::builder()
+            .attachment(0)
+            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .build();
+
+        let dependency = vk::SubpassDependency::builder()
+            .src_subpass(vk::SUBPASS_EXTERNAL)
+            .dst_subpass(0)
+            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .src_access_mask(vk::AccessFlags::empty())
+            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .dependency_flags(vk::DependencyFlags::empty());
+
+        let subpass = vk::SubpassDescription::builder()
+            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+            .color_attachments(&[color_attachment_ref])
+            .build();
+
+        let render_pass_info = vk::RenderPassCreateInfo::builder()
+            .attachments(&[attachment_description])
+            .subpasses(&[subpass])
+            .dependencies(&[*dependency])
+            .build();
+
+        unsafe { device.create_render_pass(&render_pass_info, None) }
+            .expect("Couldn't create render pass")
+    }
+
+    fn create_graphics_pipelines(
+        device: &ash::Device,
+        swapchain_details: &SwapchainDetails,
+        render_pass: &vk::RenderPass,
+    ) -> (Vec<vk::Pipeline>, vk::PipelineLayout) {
+        let vert_shader_code = read_shader_code("shaders/spv/vert.spv");
+        let frag_shader_code = read_shader_code("shaders/spv/frag.spv");
 
         let vertex_module = App::create_shader_module(device, &vert_shader_code);
         let frag_module = App::create_shader_module(device, &frag_shader_code);
@@ -1298,33 +1314,33 @@ impl App {
                 .expect("Failed to create pipeline layout!")
         };
 
-        //        let pipeline_info = [vk::GraphicsPipelineCreateInfo::builder()
-        //            .stages(&shader_stages)
-        //            .vertex_input_state(&vertex_input_info)
-        //            .input_assembly_state(&input_assembly_state)
-        //            .viewport_state(&viewport_state_create_info)
-        //            .rasterization_state(&rasterization_create_info)
-        //            .multisample_state(&multisample_state_create_info)
-        //            .color_blend_state(&color_blend_state_create_info)
-        //            .layout(pipeline_layout)
-        //            .render_pass(*render_pass)
-        //            .subpass(0)
-        //            .base_pipeline_handle(vk::Pipeline::null())
-        //            .base_pipeline_index(-1)
-        //            .dynamic_state(&pipeline_dyn_states)
-        //            .build()];
+        let pipeline_info = [vk::GraphicsPipelineCreateInfo::builder()
+            .stages(&shader_stages)
+            .vertex_input_state(&vertex_input_info)
+            .input_assembly_state(&input_assembly_state)
+            .viewport_state(&viewport_state_create_info)
+            .rasterization_state(&rasterization_create_info)
+            .multisample_state(&multisample_state_create_info)
+            .color_blend_state(&color_blend_state_create_info)
+            .layout(pipeline_layout)
+            .render_pass(*render_pass)
+            .subpass(0)
+            .base_pipeline_handle(vk::Pipeline::null())
+            .base_pipeline_index(-1)
+            .dynamic_state(&pipeline_dyn_states)
+            .build()];
 
-        //        let graphics_pipelines = unsafe {
-        //            device
-        //                .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_info, None)
-        //                .expect("Couldn't create graphics pipeline.")
-        //        };
+        let graphics_pipelines = unsafe {
+            device
+                .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_info, None)
+                .expect("Couldn't create graphics pipeline.")
+        };
 
         unsafe {
             device.destroy_shader_module(vertex_module, None);
             device.destroy_shader_module(frag_module, None);
         }
-        //    Ok((graphics_pipelines, pipeline_layout))
+        (graphics_pipelines, pipeline_layout)
     }
 
     fn draw_frame(&self) {}
