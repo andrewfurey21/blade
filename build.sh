@@ -5,5 +5,4 @@ glslc shaders/src/shader.frag -o shaders/spv/frag.spv
 echo "Building project"
 cargo fmt
 # cargo clippy
-# cargo audit
 cargo run
