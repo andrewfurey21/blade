@@ -9,5 +9,5 @@ Installed:
 * glslc
 * lunar vulkan sdk
 * vulkan-tools
-
+* cargo-audit
 
