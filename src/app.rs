@@ -1374,7 +1374,7 @@ impl App {
         let create_info = vk::CommandBufferAllocateInfo::builder()
             .level(vk::CommandBufferLevel::PRIMARY)
             .command_pool(*command_pool)
-            .command_buffer_count(1);
+            .command_buffer_count(framebuffers.len() as u32);
 
         let command_buffers = unsafe { device.allocate_command_buffers(&create_info) }
             .expect("Couldn't create command buffers.");
@@ -1520,7 +1520,7 @@ impl App {
         unsafe {
             self.device
                 .reset_fences(&wait_fences)
-                .expect("Couldn't to reset fence.");
+                .expect("Couldn't reset fence.");
 
             self.device
                 .queue_submit(
@@ -1558,13 +1558,55 @@ impl App {
 impl Drop for App {
     fn drop(&mut self) {
         unsafe {
-            for &imageview in self.swapchain_image_views.iter() {
-                self.device.destroy_image_view(imageview, None);
+            //self.device.destroy_command_pool(self.command_pool, None);
+            //for &imageview in self.swapchain_image_views.iter() {
+            //    self.device.destroy_image_view(imageview, None);
+            //}
+
+            // for i in 0..MAX_FRAMES_IN_FLIGHT {
+            //     self.device
+            //         .destroy_semaphore(self.sync_objects.image_available_semaphores[i], None);
+            //     self.device
+            //         .destroy_semaphore(self.sync_objects.render_finished_semaphores[i], None);
+            //     self.device
+            //         .destroy_fence(self.sync_objects.inflight_fences[i], None);
+            // }
+            //
+
+            for i in 0..MAX_FRAMES_IN_FLIGHT {
+                self.device
+                    .destroy_semaphore(self.sync_objects.image_available_semaphores[i], None);
+                self.device
+                    .destroy_semaphore(self.sync_objects.render_finished_semaphores[i], None);
+                self.device
+                    .destroy_fence(self.sync_objects.inflight_fences[i], None);
             }
+
+            self.device.destroy_command_pool(self.command_pool, None);
+
+            for &framebuffer in self.swapchain_framebuffers.iter() {
+                self.device.destroy_framebuffer(framebuffer, None);
+            }
+
+            // FIXME
+            self.device
+                .destroy_pipeline(self.graphics_pipelines[0], None);
+            self.device
+                .destroy_pipeline_layout(self.pipeline_layout, None);
+            self.device.destroy_render_pass(self.render_pass, None);
+
+            for &image_view in self.swapchain_image_views.iter() {
+                self.device.destroy_image_view(image_view, None);
+            }
+
+            self.swapchain_details
+                .swapchain_loader
+                .destroy_swapchain(self.swapchain_details.swapchain, None);
             self.device.destroy_device(None);
             self.surface_details
                 .surface_loader
                 .destroy_surface(self.surface_details.surface, None);
+
             if VALIDATION_ENABLED {
                 self.debug_utils_loader
                     .destroy_debug_utils_messenger(self.debug_messenger, None);
