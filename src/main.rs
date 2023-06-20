@@ -6,7 +6,7 @@ mod constants;
 
 fn main() {
     env_logger::init();
-
+    // add checking for the shaders in main file
     info!("Starting up application...");
 
     let event_loop = winit::event_loop::EventLoop::new();

@@ -31,10 +31,12 @@ impl QueueFamilyIndices {
 struct SurfaceDetails {
     surface: vk::SurfaceKHR,
     surface_loader: ash::extensions::khr::Surface,
+    width: u32,
+    height: u32,
 }
 
 impl SurfaceDetails {
-    fn new(entry: &ash::Entry, instance: &ash::Instance, window: &Window) -> Self {
+    fn new(entry: &ash::Entry, instance: &ash::Instance, window: &Window, width: u32, height: u32) -> Self {
         let surface = unsafe {
             use winit::platform::wayland::WindowExtWayland;
 
@@ -55,6 +57,8 @@ impl SurfaceDetails {
         SurfaceDetails {
             surface,
             surface_loader,
+            width,
+            height,
         }
     }
 }
@@ -101,12 +105,14 @@ pub struct App {
 
     render_pass: vk::RenderPass,
     pipeline_layout: vk::PipelineLayout,
-    graphics_pipelines: Vec<vk::Pipeline>,
+    graphics_pipeline: vk::Pipeline,
 
     command_pool: vk::CommandPool,
     command_buffers: Vec<vk::CommandBuffer>,
     sync_objects: SyncObjects,
     frame: usize,
+
+    is_framebuffer_resized: bool,
 }
 
 impl App {
@@ -127,7 +133,7 @@ impl App {
 
         let instance = App::create_instance(&entry)?;
 
-        let surface_details = SurfaceDetails::new(&entry, &instance, &window);
+        let surface_details = SurfaceDetails::new(&entry, &instance, &window, WIDTH, HEIGHT);
 
         let (debug_utils_loader, debug_messenger) = App::setup_debug_utils(&entry, &instance);
 
@@ -147,13 +153,14 @@ impl App {
             physical_device,
             &surface_details,
             &queue_indices,
+            &window,
         );
 
         let swapchain_image_views = App::create_image_views(&device, &swapchain_details);
 
         let render_pass = App::create_render_pass(&device, &swapchain_details);
-        let (graphics_pipelines, pipeline_layout) =
-            App::create_graphics_pipelines(&device, &swapchain_details, &render_pass);
+        let (graphics_pipeline, pipeline_layout) =
+            App::create_graphics_pipeline(&device, &swapchain_details, &render_pass);
 
         let swapchain_framebuffers = App::create_framebuffers(
             &device,
@@ -166,7 +173,7 @@ impl App {
         let command_buffers = App::create_command_buffers(
             &device,
             &command_pool,
-            &graphics_pipelines,
+            &graphics_pipeline,
             &swapchain_framebuffers,
             &render_pass,
             &swapchain_details,
@@ -189,12 +196,13 @@ impl App {
             swapchain_image_views,
             swapchain_framebuffers,
             render_pass,
-            graphics_pipelines,
+            graphics_pipeline,
             pipeline_layout,
             command_pool,
             command_buffers,
             sync_objects,
             frame: 0,
+            is_framebuffer_resized: false,
         })
     }
 
@@ -207,8 +215,19 @@ impl App {
                     }
                 }
             }
+
             Event::MainEventsCleared => {
+                self.window.request_redraw();
+            }
+            Event::RedrawRequested(_) => {
                 self.draw_frame();
+            }
+            Event::LoopDestroyed => {
+                unsafe {
+                    self.device
+                        .device_wait_idle()
+                        .expect("Couldn't wait device idle.")
+                };
             }
             _ => {}
         });
@@ -221,7 +240,8 @@ impl App {
     ) -> Result<Window, &'static str> {
         WindowBuilder::new()
             .with_title(TITLE)
-            .with_inner_size(PhysicalSize::<u32>::from((width, height)))
+            .with_inner_size(winit::dpi::LogicalSize::new(width, height))
+            //     .with_inner_size(PhysicalSize::<u32>::from((width, height)))
             .with_resizable(true)
             .build(event_loop)
             .map_err(|_| "Couldn't create window.")
@@ -537,12 +557,13 @@ impl App {
         physical_device: vk::PhysicalDevice,
         surface_details: &SurfaceDetails,
         queue_indices: &QueueFamilyIndices,
+        window: &winit::window::Window,
     ) -> SwapchainDetails {
         let swapchain_support = App::query_swapchain_support(physical_device, surface_details);
 
         let surface_format = App::choose_swapchain_format(&swapchain_support.formats);
         let present_mode = App::choose_swapchain_present_mode(&swapchain_support.present_modes);
-        let extent = App::choose_swapchain_extent(&swapchain_support.capabilities);
+        let extent = App::choose_swapchain_extent(&swapchain_support.capabilities, window);
 
         let image_count = swapchain_support.capabilities.min_image_count + 1;
         let image_count = if swapchain_support.capabilities.max_image_count > 0 {
@@ -636,20 +657,24 @@ impl App {
         vk::PresentModeKHR::FIFO
     }
 
-    fn choose_swapchain_extent(capabilities: &vk::SurfaceCapabilitiesKHR) -> vk::Extent2D {
+    fn choose_swapchain_extent(
+        capabilities: &vk::SurfaceCapabilitiesKHR,
+        window: &winit::window::Window,
+    ) -> vk::Extent2D {
         if capabilities.current_extent.width != u32::max_value() {
             capabilities.current_extent
         } else {
             use num::clamp;
-
+            let inner_size = window.inner_size();
+            println!("{:?}", inner_size);
             vk::Extent2D {
                 width: clamp(
-                    WIDTH,
+                    inner_size.width as u32,
                     capabilities.min_image_extent.width,
                     capabilities.max_image_extent.width,
                 ),
                 height: clamp(
-                    HEIGHT,
+                    inner_size.height as u32,
                     capabilities.min_image_extent.height,
                     capabilities.max_image_extent.height,
                 ),
@@ -756,11 +781,11 @@ impl App {
             .expect("Couldn't create render pass")
     }
 
-    fn create_graphics_pipelines(
+    fn create_graphics_pipeline(
         device: &ash::Device,
         swapchain_details: &SwapchainDetails,
         render_pass: &vk::RenderPass,
-    ) -> (Vec<vk::Pipeline>, vk::PipelineLayout) {
+    ) -> (vk::Pipeline, vk::PipelineLayout) {
         let vert_shader_code = read_shader_code("shaders/spv/vert.spv");
         let frag_shader_code = read_shader_code("shaders/spv/frag.spv");
 
@@ -784,9 +809,10 @@ impl App {
         let shader_stages = [vert_shader_stage, frag_shader_stage];
 
         //     viewport, scissor for now, multiple viewports require setting feature
-        //let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+        let dynamic_states = [vk::DynamicState::VIEWPORT]; // vk::DynamicState::SCISSOR];
+
         let pipeline_dyn_states = vk::PipelineDynamicStateCreateInfo::builder()
-            //   .dynamic_states(&dynamic_states)
+            //.dynamic_states(&dynamic_states)
             .build();
 
         let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default();
@@ -888,7 +914,7 @@ impl App {
             device.destroy_shader_module(vertex_module, None);
             device.destroy_shader_module(frag_module, None);
         }
-        (graphics_pipelines, pipeline_layout)
+        (graphics_pipelines[0], pipeline_layout)
     }
 
     fn create_framebuffers(
@@ -931,13 +957,11 @@ impl App {
     fn create_command_buffers(
         device: &ash::Device,
         command_pool: &vk::CommandPool,
-        graphics_pipelines: &Vec<vk::Pipeline>,
+        graphics_pipeline: &vk::Pipeline,
         framebuffers: &Vec<vk::Framebuffer>,
         render_pass: &vk::RenderPass,
         swapchain_details: &SwapchainDetails,
     ) -> Vec<vk::CommandBuffer> {
-        let graphics_pipeline = graphics_pipelines[0];
-
         let create_info = vk::CommandBufferAllocateInfo::builder()
             .level(vk::CommandBufferLevel::PRIMARY)
             .command_pool(*command_pool)
@@ -988,7 +1012,7 @@ impl App {
                 device.cmd_bind_pipeline(
                     command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    graphics_pipeline,
+                    *graphics_pipeline,
                 );
                 device.cmd_draw(command_buffer, 3, 1, 0, 0);
 
@@ -1049,6 +1073,81 @@ impl App {
         sync_objects
     }
 
+    fn cleanup_swapchain(&self) {
+        unsafe {
+            self.device
+                .free_command_buffers(self.command_pool, &self.command_buffers);
+
+            for &framebuffer in self.swapchain_framebuffers.iter() {
+                self.device.destroy_framebuffer(framebuffer, None);
+            }
+            self.device.destroy_pipeline(self.graphics_pipeline, None);
+            self.device
+                .destroy_pipeline_layout(self.pipeline_layout, None);
+
+            self.device.destroy_render_pass(self.render_pass, None);
+            for &image_view in self.swapchain_image_views.iter() {
+                self.device.destroy_image_view(image_view, None);
+            }
+            self.swapchain_details
+                .swapchain_loader
+                .destroy_swapchain(self.swapchain_details.swapchain, None);
+        }
+    }
+
+    fn recreate_swapchain(&mut self) {
+        println!("Recreating swapchain.");
+        let surface_details = SurfaceDetails {
+            surface_loader: self.surface_details.surface_loader.clone(),
+            surface: self.surface_details.surface,
+            width: WIDTH,
+            height: HEIGHT,
+        };
+
+        unsafe {
+            self.device
+                .device_wait_idle()
+                .expect("Couldn't wait device idle.")
+        };
+
+        self.cleanup_swapchain();
+
+        self.swapchain_details = App::create_swapchain(
+            &self.instance,
+            &self.device,
+            self.physical_device,
+            &surface_details,
+            &self.queue_indices,
+            &self.window,
+        );
+
+        self.swapchain_image_views = App::create_image_views(&self.device, &self.swapchain_details);
+
+        self.render_pass = App::create_render_pass(&self.device, &self.swapchain_details);
+
+        let (graphics_pipeline, pipeline_layout) =
+            App::create_graphics_pipeline(&self.device, &self.swapchain_details, &self.render_pass);
+
+        self.graphics_pipeline = graphics_pipeline;
+        self.pipeline_layout = pipeline_layout;
+
+        self.swapchain_framebuffers = App::create_framebuffers(
+            &self.device,
+            &self.swapchain_image_views,
+            &self.render_pass,
+            &self.swapchain_details,
+        );
+
+        self.command_buffers = App::create_command_buffers(
+            &self.device,
+            &self.command_pool,
+            &self.graphics_pipeline,
+            &self.swapchain_framebuffers,
+            &self.render_pass,
+            &self.swapchain_details,
+        );
+    }
+
     fn draw_frame(&mut self) {
         let wait_fences = [self.sync_objects.inflight_fences[self.frame]];
 
@@ -1057,15 +1156,23 @@ impl App {
                 .wait_for_fences(&wait_fences, true, std::u64::MAX)
                 .expect("Couldn't wait for fence.");
 
-            self.swapchain_details
-                .swapchain_loader
-                .acquire_next_image(
-                    self.swapchain_details.swapchain,
-                    std::u64::MAX,
-                    self.sync_objects.image_available_semaphores[self.frame],
-                    vk::Fence::null(),
-                )
-                .expect("Failed to acquire next image.")
+            let result = self.swapchain_details.swapchain_loader.acquire_next_image(
+                self.swapchain_details.swapchain,
+                std::u64::MAX,
+                self.sync_objects.image_available_semaphores[self.frame],
+                vk::Fence::null(),
+            );
+
+            match result {
+                Ok(image_index) => image_index,
+                Err(vk_result) => match vk_result {
+                    vk::Result::ERROR_OUT_OF_DATE_KHR => {
+                        self.recreate_swapchain();
+                        return;
+                    }
+                    _ => panic!("Coudln't acquire Swapchain image."),
+                },
+            }
         };
 
         let wait_semaphores = [self.sync_objects.image_available_semaphores[self.frame]];
@@ -1111,11 +1218,26 @@ impl App {
             p_results: std::ptr::null_mut(),
         };
 
-        unsafe {
+        let result = unsafe {
             self.swapchain_details
                 .swapchain_loader
                 .queue_present(self.present_queue, &present_info)
-                .expect("Failed to execute queue present.");
+        };
+
+        let mut is_resized = match result {
+            Ok(_) => self.is_framebuffer_resized,
+            Err(vk_result) => match vk_result {
+                vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::SUBOPTIMAL_KHR => {
+                    println!("resizing");
+                    true
+                }
+                _ => panic!("Couldn't present."),
+            },
+        };
+        //is_resized = true;
+        if is_resized {
+            self.is_framebuffer_resized = false;
+            self.recreate_swapchain();
         }
 
         self.frame = (self.frame + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -1140,9 +1262,7 @@ impl Drop for App {
                 self.device.destroy_framebuffer(framebuffer, None);
             }
 
-            // FIXME
-            self.device
-                .destroy_pipeline(self.graphics_pipelines[0], None);
+            self.device.destroy_pipeline(self.graphics_pipeline, None);
             self.device
                 .destroy_pipeline_layout(self.pipeline_layout, None);
             self.device.destroy_render_pass(self.render_pass, None);
@@ -1188,7 +1308,7 @@ unsafe extern "system" fn vulkan_debug_utils_callback(
         _ => "[Unknown]",
     };
     let message = CStr::from_ptr((*p_callback_data).p_message);
-    println!("[Debug]{}{}{:?}", severity, types, message);
+    println!("[Debug]{}{}{:?}\n\n", severity, types, message);
 
     vk::FALSE
 }
