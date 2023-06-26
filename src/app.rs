@@ -249,7 +249,7 @@ impl App {
         WindowBuilder::new()
             .with_title(TITLE)
             .with_inner_size(winit::dpi::LogicalSize::new(width, height))
-            //     .with_inner_size(PhysicalSize::<u32>::from((width, height)))
+            //.with_inner_size(PhysicalSize::<u32>::from((width, height)))
             .with_resizable(true)
             .build(event_loop)
             .map_err(|_| "Couldn't create window.")
@@ -673,8 +673,8 @@ impl App {
         //    capabilities.current_extent
         //} else {
         use num::clamp;
-        let inner_size = window.inner_size();
-        println!("Window size: {:?}", inner_size);
+        let inner_size = window.outer_size();
+        //println!("Window size: {:?}", inner_size);
         vk::Extent2D {
             width: clamp(
                 inner_size.width as u32,
@@ -1110,14 +1110,13 @@ impl App {
                 .expect("Couldn't wait device idle.")
         };
 
-        println!("Recreating swapchain.");
         self.cleanup_swapchain();
 
-        let surface_details = SurfaceDetails {
+        self.surface_details = SurfaceDetails {
             surface_loader: self.surface_details.surface_loader.clone(),
             surface: self.surface_details.surface,
-            width: WIDTH,
-            height: HEIGHT,
+            width: self.window.inner_size().width,
+            height: self.window.inner_size().height,
         };
         //
         //self.surface_details =
@@ -1182,13 +1181,7 @@ impl App {
 
             match result {
                 Ok(image_index) => image_index,
-                Err(vk_result) => match vk_result {
-                    vk::Result::ERROR_OUT_OF_DATE_KHR => {
-                        self.recreate_swapchain();
-                        return;
-                    }
-                    _ => panic!("Coudln't acquire Swapchain image."),
-                },
+                Err(_) => panic!("Coudln't acquire Swapchain image."),
             }
         };
 
@@ -1241,22 +1234,22 @@ impl App {
                 .queue_present(self.present_queue, &present_info)
         };
 
-        let mut is_resized = match result {
-            Ok(_) => self.is_framebuffer_resized,
-            Err(vk_result) => match vk_result {
-                vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::SUBOPTIMAL_KHR => {
-                    println!("resizing");
-                    true
-                }
-                _ => panic!("Couldn't present."),
-            },
-        };
-        //is_resized = true;
-        if is_resized {
-            self.is_framebuffer_resized = false;
-            self.recreate_swapchain();
+        if let Err(vk_result) = result {
+            panic!("Couldn't present, possibly resize.");
         }
 
+        if (self.surface_details.width != self.window.inner_size().width
+            || self.surface_details.height != self.window.inner_size().height)
+        {
+            //println!(
+            //    "surface width: {} surface height: {} window width: {} window height:{}",
+            //    self.surface_details.width,
+            //    self.surface_details.height,
+            //    self.window.inner_size().width,
+            //    self.window.inner_size().height
+            //);
+            self.recreate_swapchain();
+        }
         self.frame = (self.frame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 }
@@ -1273,24 +1266,9 @@ impl Drop for App {
                     .destroy_fence(self.sync_objects.inflight_fences[i], None);
             }
 
+            self.cleanup_swapchain();
             self.device.destroy_command_pool(self.command_pool, None);
 
-            for &framebuffer in self.swapchain_framebuffers.iter() {
-                self.device.destroy_framebuffer(framebuffer, None);
-            }
-
-            self.device.destroy_pipeline(self.graphics_pipeline, None);
-            self.device
-                .destroy_pipeline_layout(self.pipeline_layout, None);
-            self.device.destroy_render_pass(self.render_pass, None);
-
-            for &image_view in self.swapchain_image_views.iter() {
-                self.device.destroy_image_view(image_view, None);
-            }
-
-            self.swapchain_details
-                .swapchain_loader
-                .destroy_swapchain(self.swapchain_details.swapchain, None);
             self.device.destroy_device(None);
             self.surface_details
                 .surface_loader
