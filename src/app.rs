@@ -36,7 +36,13 @@ struct SurfaceDetails {
 }
 
 impl SurfaceDetails {
-    fn new(entry: &ash::Entry, instance: &ash::Instance, window: &Window, width: u32, height: u32) -> Self {
+    fn new(
+        entry: &ash::Entry,
+        instance: &ash::Instance,
+        window: &Window,
+        width: u32,
+        height: u32,
+    ) -> Self {
         let surface = unsafe {
             use winit::platform::wayland::WindowExtWayland;
 
@@ -84,6 +90,7 @@ struct SyncObjects {
 }
 
 pub struct App {
+    entry: ash::Entry,
     window: Window,
     instance: ash::Instance,
 
@@ -182,6 +189,7 @@ impl App {
         let sync_objects = App::create_sync_objects(&device);
 
         Ok(App {
+            entry,
             window,
             instance,
             debug_utils_loader,
@@ -661,25 +669,25 @@ impl App {
         capabilities: &vk::SurfaceCapabilitiesKHR,
         window: &winit::window::Window,
     ) -> vk::Extent2D {
-        if capabilities.current_extent.width != u32::max_value() {
-            capabilities.current_extent
-        } else {
-            use num::clamp;
-            let inner_size = window.inner_size();
-            println!("{:?}", inner_size);
-            vk::Extent2D {
-                width: clamp(
-                    inner_size.width as u32,
-                    capabilities.min_image_extent.width,
-                    capabilities.max_image_extent.width,
-                ),
-                height: clamp(
-                    inner_size.height as u32,
-                    capabilities.min_image_extent.height,
-                    capabilities.max_image_extent.height,
-                ),
-            }
+        //if capabilities.current_extent.width != u32::max_value() {
+        //    capabilities.current_extent
+        //} else {
+        use num::clamp;
+        let inner_size = window.inner_size();
+        println!("Window size: {:?}", inner_size);
+        vk::Extent2D {
+            width: clamp(
+                inner_size.width as u32,
+                capabilities.min_image_extent.width,
+                capabilities.max_image_extent.width,
+            ),
+            height: clamp(
+                inner_size.height as u32,
+                capabilities.min_image_extent.height,
+                capabilities.max_image_extent.height,
+            ),
         }
+        //}
     }
 
     fn create_image_views(
@@ -1096,30 +1104,39 @@ impl App {
     }
 
     fn recreate_swapchain(&mut self) {
-        println!("Recreating swapchain.");
-        let surface_details = SurfaceDetails {
-            surface_loader: self.surface_details.surface_loader.clone(),
-            surface: self.surface_details.surface,
-            width: WIDTH,
-            height: HEIGHT,
-        };
-
         unsafe {
             self.device
                 .device_wait_idle()
                 .expect("Couldn't wait device idle.")
         };
 
+        println!("Recreating swapchain.");
         self.cleanup_swapchain();
 
-        self.swapchain_details = App::create_swapchain(
+        let surface_details = SurfaceDetails {
+            surface_loader: self.surface_details.surface_loader.clone(),
+            surface: self.surface_details.surface,
+            width: WIDTH,
+            height: HEIGHT,
+        };
+        //
+        //self.surface_details =
+        //    SurfaceDetails::new(&self.entry, &self.instance, &self.window, WIDTH, HEIGHT);
+
+        let swapchain_details = App::create_swapchain(
             &self.instance,
             &self.device,
             self.physical_device,
-            &surface_details,
+            &self.surface_details,
             &self.queue_indices,
             &self.window,
         );
+
+        self.swapchain_details.swapchain_loader = swapchain_details.swapchain_loader;
+        self.swapchain_details.swapchain = swapchain_details.swapchain;
+        self.swapchain_details.images = swapchain_details.images;
+        self.swapchain_details.format = swapchain_details.format;
+        self.swapchain_details.extent = swapchain_details.extent;
 
         self.swapchain_image_views = App::create_image_views(&self.device, &self.swapchain_details);
 
