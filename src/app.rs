@@ -12,10 +12,7 @@ use std::collections::HashSet;
 use std::ffi::{c_char, CStr, CString};
 use std::os::raw::c_void;
 
-use winit::{
-    dpi::PhysicalSize, event, event::Event, event_loop::EventLoop, window::Window,
-    window::WindowBuilder,
-};
+use winit::{event, event::Event, event_loop::EventLoop, window::Window, window::WindowBuilder};
 
 struct QueueFamilyIndices {
     graphics_family: Option<u32>,
@@ -90,7 +87,7 @@ struct SyncObjects {
 }
 
 pub struct App {
-    entry: ash::Entry,
+    _entry: ash::Entry,
     window: Window,
     instance: ash::Instance,
 
@@ -118,8 +115,7 @@ pub struct App {
     command_buffers: Vec<vk::CommandBuffer>,
     sync_objects: SyncObjects,
     frame: usize,
-
-    is_framebuffer_resized: bool,
+    //is_framebuffer_resized: bool,
 }
 
 impl App {
@@ -133,7 +129,7 @@ impl App {
     const DEVICE_EXTENSIONS: [&'static str; 1] = ["VK_KHR_swapchain"];
 
     pub fn new(event_loop: &EventLoop<()>) -> Result<App, &'static str> {
-        let window = App::init_window(&event_loop, WIDTH, HEIGHT)?;
+        let window = App::init_window(event_loop, WIDTH, HEIGHT)?;
 
         let entry = unsafe { ash::Entry::load() }.map_err(|_| "Coudn't create Vulkan entry")?;
         //let surface_extensions = App::get_surface_extensions(event_loop)?;
@@ -189,7 +185,7 @@ impl App {
         let sync_objects = App::create_sync_objects(&device);
 
         Ok(App {
-            entry,
+            _entry: entry,
             window,
             instance,
             debug_utils_loader,
@@ -210,7 +206,6 @@ impl App {
             command_buffers,
             sync_objects,
             frame: 0,
-            is_framebuffer_resized: false,
         })
     }
 
@@ -255,6 +250,7 @@ impl App {
             .map_err(|_| "Couldn't create window.")
     }
 
+    #[allow(dead_code)]
     fn get_surface_extensions(
         event_loop: &EventLoop<()>,
     ) -> Result<&'static [*const c_char], &'static str> {
@@ -316,7 +312,7 @@ impl App {
             .enumerate_instance_layer_properties()
             .expect("Couldn't enumerate instance layer properties.");
 
-        if layer_properties.len() <= 0 {
+        if layer_properties.is_empty() {
             eprintln!("No available layers.");
             return false;
         }
@@ -471,7 +467,7 @@ impl App {
             .map(|layer_name| CString::new(*layer_name).unwrap())
             .collect();
 
-        let enable_layer_names: Vec<*const c_char> = requred_validation_layer_raw_names
+        let _enable_layer_names: Vec<*const c_char> = requred_validation_layer_raw_names
             .iter()
             .map(|layer_name| layer_name.as_ptr())
             .collect();
@@ -482,7 +478,7 @@ impl App {
             vk::DeviceCreateInfo::builder()
                 .queue_create_infos(&queue_create_infos as &[vk::DeviceQueueCreateInfo])
                 .enabled_extension_names(&extensions)
-                .enabled_layer_names(&enable_layer_names)
+                //.enabled_layer_names(&enable_layer_names)
                 .enabled_features(&physical_device_features)
         } else {
             vk::DeviceCreateInfo::builder()
@@ -817,7 +813,7 @@ impl App {
         let shader_stages = [vert_shader_stage, frag_shader_stage];
 
         //     viewport, scissor for now, multiple viewports require setting feature
-        let dynamic_states = [vk::DynamicState::VIEWPORT]; // vk::DynamicState::SCISSOR];
+        let _dynamic_states = [vk::DynamicState::VIEWPORT]; // vk::DynamicState::SCISSOR];
 
         let pipeline_dyn_states = vk::PipelineDynamicStateCreateInfo::builder()
             //.dynamic_states(&dynamic_states)
@@ -1118,9 +1114,6 @@ impl App {
             width: self.window.inner_size().width,
             height: self.window.inner_size().height,
         };
-        //
-        //self.surface_details =
-        //    SurfaceDetails::new(&self.entry, &self.instance, &self.window, WIDTH, HEIGHT);
 
         let swapchain_details = App::create_swapchain(
             &self.instance,
@@ -1234,12 +1227,12 @@ impl App {
                 .queue_present(self.present_queue, &present_info)
         };
 
-        if let Err(vk_result) = result {
+        if let Err(_) = result {
             panic!("Couldn't present, possibly resize.");
         }
 
-        if (self.surface_details.width != self.window.inner_size().width
-            || self.surface_details.height != self.window.inner_size().height)
+        if self.surface_details.width != self.window.inner_size().width
+            || self.surface_details.height != self.window.inner_size().height
         {
             //println!(
             //    "surface width: {} surface height: {} window width: {} window height:{}",
