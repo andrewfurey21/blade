@@ -1,18 +1,24 @@
 use crate::constants::*;
+use std::collections::HashSet;
+use std::ffi::{c_char, CStr, CString};
 use std::io::prelude::*;
-
-use raw_window_handle::HasRawDisplayHandle;
+use std::os::raw::c_void;
 
 use ash::extensions::ext::DebugUtils;
 use ash::extensions::khr::Surface;
 use ash::extensions::khr::WaylandSurface;
 use ash::vk;
 
-use std::collections::HashSet;
-use std::ffi::{c_char, CStr, CString};
-use std::os::raw::c_void;
-
+use cgmath;
+use memoffset::offset_of;
+use raw_window_handle::HasRawDisplayHandle;
 use winit::{event, event::Event, event_loop::EventLoop, window::Window, window::WindowBuilder};
+
+const VERTEX_DATA: [Vertex; 3] = [
+    Vertex::new(0.0, -0.5, 1.0, 1.0, 1.0),
+    Vertex::new(0.5, 0.5, 0.0, 1.0, 0.0),
+    Vertex::new(-0.5, 0.5, 0.0, 0.0, 1.0),
+];
 
 struct QueueFamilyIndices {
     graphics_family: Option<u32>,
@@ -111,6 +117,9 @@ pub struct App {
     pipeline_layout: vk::PipelineLayout,
     graphics_pipeline: vk::Pipeline,
 
+    vertex_buffer: vk::Buffer,
+    vertex_buffer_memory: vk::DeviceMemory,
+
     command_pool: vk::CommandPool,
     command_buffers: Vec<vk::CommandBuffer>,
     sync_objects: SyncObjects,
@@ -172,6 +181,9 @@ impl App {
             &swapchain_details,
         );
 
+        let (vertex_buffer, vertex_buffer_memory) =
+            App::create_vertex_buffer(&instance, &device, physical_device);
+
         let command_pool = App::create_command_pool(&device, &queue_indices);
         let command_buffers = App::create_command_buffers(
             &device,
@@ -180,6 +192,7 @@ impl App {
             &swapchain_framebuffers,
             &render_pass,
             &swapchain_details,
+            &vertex_buffer,
         );
 
         let sync_objects = App::create_sync_objects(&device);
@@ -205,6 +218,8 @@ impl App {
             command_pool,
             command_buffers,
             sync_objects,
+            vertex_buffer,
+            vertex_buffer_memory,
             frame: 0,
         })
     }
@@ -819,7 +834,14 @@ impl App {
             //.dynamic_states(&dynamic_states)
             .build();
 
-        let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default();
+        let binding_descriptions = Vertex::get_binding_descriptions();
+        let attribute_descriptions = Vertex::get_attribute_descriptions();
+        //let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default();
+        let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
+            .vertex_binding_descriptions(&binding_descriptions)
+            .vertex_attribute_descriptions(&attribute_descriptions)
+            .build();
+
         let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
             primitive_restart_enable: 0,
             topology: vk::PrimitiveTopology::TRIANGLE_LIST,
@@ -965,6 +987,7 @@ impl App {
         framebuffers: &Vec<vk::Framebuffer>,
         render_pass: &vk::RenderPass,
         swapchain_details: &SwapchainDetails,
+        vertex_buffer: &vk::Buffer,
     ) -> Vec<vk::CommandBuffer> {
         let create_info = vk::CommandBufferAllocateInfo::builder()
             .level(vk::CommandBufferLevel::PRIMARY)
@@ -1018,6 +1041,12 @@ impl App {
                     vk::PipelineBindPoint::GRAPHICS,
                     *graphics_pipeline,
                 );
+
+                let vertex_buffers = [*vertex_buffer];
+                let offsets = [0_u64];
+
+                device.cmd_bind_vertex_buffers(command_buffer, 0, &vertex_buffers, &offsets);
+
                 device.cmd_draw(command_buffer, 3, 1, 0, 0);
 
                 device.cmd_end_render_pass(command_buffer);
@@ -1154,7 +1183,89 @@ impl App {
             &self.swapchain_framebuffers,
             &self.render_pass,
             &self.swapchain_details,
+            &self.vertex_buffer,
         );
+    }
+
+    //TODO: maybe use gpu_allocator instead
+    fn create_vertex_buffer(
+        instance: &ash::Instance,
+        device: &ash::Device,
+        physical_device: vk::PhysicalDevice,
+    ) -> (vk::Buffer, vk::DeviceMemory) {
+        let vertex_buffer_create_info = vk::BufferCreateInfo::builder()
+            .size(std::mem::size_of_val(&VERTEX_DATA) as u64)
+            .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .queue_family_indices(&[0])
+            .build();
+
+        let vertex_buffer = unsafe {
+            device
+                .create_buffer(&vertex_buffer_create_info, None)
+                .expect("Couldn't create vertex buffer.")
+        };
+
+        let mem_requirements = unsafe { device.get_buffer_memory_requirements(vertex_buffer) };
+
+        let mem_properties =
+            unsafe { instance.get_physical_device_memory_properties(physical_device) };
+        let required_memory_flags: vk::MemoryPropertyFlags =
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
+        let memory_type = App::find_memory_type(
+            mem_requirements.memory_type_bits,
+            required_memory_flags,
+            mem_properties,
+        );
+
+        let allocate_info = vk::MemoryAllocateInfo {
+            s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
+            p_next: std::ptr::null(),
+            allocation_size: mem_requirements.size,
+            memory_type_index: memory_type,
+        };
+
+        let vertex_buffer_memory = unsafe {
+            device
+                .allocate_memory(&allocate_info, None)
+                .expect("Couldn't allocate vertex buffer memory.")
+        };
+
+        unsafe {
+            device
+                .bind_buffer_memory(vertex_buffer, vertex_buffer_memory, 0)
+                .expect("Couldn't bind buffer.");
+
+            let data_ptr = device
+                .map_memory(
+                    vertex_buffer_memory,
+                    0,
+                    vertex_buffer_create_info.size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("Couldn't map memory.") as *mut Vertex;
+
+            data_ptr.copy_from_nonoverlapping(VERTEX_DATA.as_ptr(), VERTEX_DATA.len());
+
+            device.unmap_memory(vertex_buffer_memory);
+        }
+
+        (vertex_buffer, vertex_buffer_memory)
+    }
+
+    fn find_memory_type(
+        type_filter: u32,
+        required_properties: vk::MemoryPropertyFlags,
+        mem_properties: vk::PhysicalDeviceMemoryProperties,
+    ) -> u32 {
+        for (i, memory_type) in mem_properties.memory_types.iter().enumerate() {
+            if (type_filter & (1 << i)) > 0
+                && memory_type.property_flags.contains(required_properties)
+            {
+                return i as u32;
+            }
+        }
+        panic!("Couldn't find suitable memory type.")
     }
 
     fn draw_frame(&mut self) {
@@ -1260,6 +1371,9 @@ impl Drop for App {
             }
 
             self.cleanup_swapchain();
+            self.device.destroy_buffer(self.vertex_buffer, None);
+            self.device.free_memory(self.vertex_buffer_memory, None);
+
             self.device.destroy_command_pool(self.command_pool, None);
 
             self.device.destroy_device(None);
@@ -1273,6 +1387,45 @@ impl Drop for App {
             }
             self.instance.destroy_instance(None);
         }
+    }
+}
+
+#[repr(C)]
+struct Vertex {
+    pos: cgmath::Vector2<f32>,
+    color: cgmath::Vector3<f32>,
+}
+
+impl Vertex {
+    const fn new(x: f32, y: f32, r: f32, g: f32, b: f32) -> Self {
+        let pos = cgmath::Vector2::new(x, y);
+        let color = cgmath::Vector3::new(r, g, b);
+        Vertex { pos, color }
+    }
+
+    fn get_binding_descriptions() -> [vk::VertexInputBindingDescription; 1] {
+        [vk::VertexInputBindingDescription {
+            binding: 0,
+            stride: std::mem::size_of::<Self>() as u32,
+            input_rate: vk::VertexInputRate::VERTEX,
+        }]
+    }
+
+    fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 2] {
+        [
+            vk::VertexInputAttributeDescription {
+                location: 0,
+                binding: 0,
+                format: vk::Format::R32G32_SFLOAT,
+                offset: offset_of!(Self, pos) as u32,
+            },
+            vk::VertexInputAttributeDescription {
+                binding: 0,
+                location: 1,
+                format: vk::Format::R32G32B32_SFLOAT,
+                offset: offset_of!(Self, color) as u32,
+            },
+        ]
     }
 }
 
