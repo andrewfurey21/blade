@@ -14,11 +14,14 @@ use memoffset::offset_of;
 use raw_window_handle::HasRawDisplayHandle;
 use winit::{event, event::Event, event_loop::EventLoop, window::Window, window::WindowBuilder};
 
-const VERTEX_DATA: [Vertex; 3] = [
-    Vertex::new(0.0, -0.5, 1.0, 1.0, 1.0),
-    Vertex::new(0.5, 0.5, 0.0, 1.0, 0.0),
-    Vertex::new(-0.5, 0.5, 0.0, 0.0, 1.0),
+const VERTEX_DATA: [Vertex; 4] = [
+    Vertex::new(1.0, -1.0, 0.0, 1.0, 0.0),
+    Vertex::new(1.0, 1.0, 0.0, 1.0, 1.0),
+    Vertex::new(-1.0, -1.0, 1.0, 0.0, 0.0),
+    Vertex::new(-1.0, 1.0, 1.0, 1.0, 1.0),
 ];
+
+const INDICES_DATA: [u32; 6] = [0, 1, 2, 2, 3, 0];
 
 struct QueueFamilyIndices {
     graphics_family: Option<u32>,
@@ -119,6 +122,8 @@ pub struct App {
 
     vertex_buffer: vk::Buffer,
     vertex_buffer_memory: vk::DeviceMemory,
+    index_buffer: vk::Buffer,
+    index_buffer_memory: vk::DeviceMemory,
 
     command_pool: vk::CommandPool,
     command_buffers: Vec<vk::CommandBuffer>,
@@ -190,6 +195,14 @@ impl App {
             &graphics_queue,
         );
 
+        let (index_buffer, index_buffer_memory) = App::create_index_buffer(
+            &instance,
+            &device,
+            physical_device,
+            command_pool,
+            graphics_queue,
+        );
+
         let command_buffers = App::create_command_buffers(
             &device,
             &command_pool,
@@ -198,6 +211,7 @@ impl App {
             &render_pass,
             &swapchain_details,
             &vertex_buffer,
+            &index_buffer,
         );
 
         let sync_objects = App::create_sync_objects(&device);
@@ -225,6 +239,8 @@ impl App {
             sync_objects,
             vertex_buffer,
             vertex_buffer_memory,
+            index_buffer,
+            index_buffer_memory,
             frame: 0,
         })
     }
@@ -993,6 +1009,7 @@ impl App {
         render_pass: &vk::RenderPass,
         swapchain_details: &SwapchainDetails,
         vertex_buffer: &vk::Buffer,
+        index_buffer: &vk::Buffer,
     ) -> Vec<vk::CommandBuffer> {
         let create_info = vk::CommandBufferAllocateInfo::builder()
             .level(vk::CommandBufferLevel::PRIMARY)
@@ -1051,8 +1068,16 @@ impl App {
                 let offsets = [0_u64];
 
                 device.cmd_bind_vertex_buffers(command_buffer, 0, &vertex_buffers, &offsets);
+                device.cmd_bind_index_buffer(
+                    command_buffer,
+                    *index_buffer,
+                    0,
+                    vk::IndexType::UINT32,
+                );
 
-                device.cmd_draw(command_buffer, 3, 1, 0, 0);
+                device.cmd_draw_indexed(command_buffer, INDICES_DATA.len() as u32, 1, 0, 0, 0);
+
+                //device.cmd_draw(command_buffer, 3, 1, 0, 0);
 
                 device.cmd_end_render_pass(command_buffer);
 
@@ -1189,6 +1214,7 @@ impl App {
             &self.render_pass,
             &self.swapchain_details,
             &self.vertex_buffer,
+            &self.index_buffer,
         );
     }
 
@@ -1201,6 +1227,7 @@ impl App {
         submit_queue: &vk::Queue,
     ) -> (vk::Buffer, vk::DeviceMemory) {
         let buffer_size = std::mem::size_of_val(&VERTEX_DATA) as vk::DeviceSize;
+        println!("buffer size: {}", buffer_size);
         let device_memory_properties =
             unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
@@ -1225,7 +1252,7 @@ impl App {
                     vk::MemoryMapFlags::empty(),
                 )
                 .expect("Couldn't map memory.") as *mut Vertex;
-
+            println!("length: {} ", VERTEX_DATA.len());
             data_ptr.copy_from_nonoverlapping(VERTEX_DATA.as_ptr(), VERTEX_DATA.len());
 
             device.unmap_memory(staging_buffer_memory);
@@ -1385,10 +1412,69 @@ impl App {
         unsafe {
             device
                 .bind_buffer_memory(buffer, buffer_memory, 0)
-                .expect("Failed to bind Buffer");
+                .expect("Failed to bind buffer.");
         }
 
         (buffer, buffer_memory)
+    }
+
+    fn create_index_buffer(
+        instance: &ash::Instance,
+        device: &ash::Device,
+        physical_device: vk::PhysicalDevice,
+        command_pool: vk::CommandPool,
+        submit_queue: vk::Queue,
+    ) -> (vk::Buffer, vk::DeviceMemory) {
+        let buffer_size = std::mem::size_of_val(&INDICES_DATA) as vk::DeviceSize;
+        let device_memory_properties =
+            unsafe { instance.get_physical_device_memory_properties(physical_device) };
+
+        let (staging_buffer, staging_buffer_memory) = App::create_buffer(
+            device,
+            buffer_size,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            device_memory_properties,
+        );
+
+        unsafe {
+            let data_ptr = device
+                .map_memory(
+                    staging_buffer_memory,
+                    0,
+                    buffer_size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("Failed to Map Memory") as *mut u32;
+
+            data_ptr.copy_from_nonoverlapping(INDICES_DATA.as_ptr(), INDICES_DATA.len());
+
+            device.unmap_memory(staging_buffer_memory);
+        }
+
+        let (index_buffer, index_buffer_memory) = App::create_buffer(
+            device,
+            buffer_size,
+            vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            device_memory_properties,
+        );
+
+        App::copy_buffer(
+            device,
+            &submit_queue,
+            &command_pool,
+            staging_buffer,
+            index_buffer,
+            buffer_size,
+        );
+
+        unsafe {
+            device.destroy_buffer(staging_buffer, None);
+            device.free_memory(staging_buffer_memory, None);
+        }
+
+        (index_buffer, index_buffer_memory)
     }
 
     fn draw_frame(&mut self) {
@@ -1494,6 +1580,8 @@ impl Drop for App {
             }
 
             self.cleanup_swapchain();
+            self.device.destroy_buffer(self.index_buffer, None);
+            self.device.free_memory(self.index_buffer_memory, None);
             self.device.destroy_buffer(self.vertex_buffer, None);
             self.device.free_memory(self.vertex_buffer_memory, None);
 
@@ -1514,6 +1602,7 @@ impl Drop for App {
 }
 
 #[repr(C)]
+#[derive(Clone, Debug, Copy)]
 struct Vertex {
     pos: cgmath::Vector2<f32>,
     color: cgmath::Vector3<f32>,
