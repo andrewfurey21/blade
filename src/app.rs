@@ -1,8 +1,10 @@
 use crate::constants::*;
+
 use std::collections::HashSet;
 use std::ffi::{c_char, CStr, CString};
 use std::io::prelude::*;
 use std::os::raw::c_void;
+use std::path::Path;
 
 use ash::extensions::ext::DebugUtils;
 use ash::extensions::khr::Surface;
@@ -10,13 +12,14 @@ use ash::extensions::khr::WaylandSurface;
 use ash::vk;
 
 use cgmath;
+use image;
 use memoffset::offset_of;
 use raw_window_handle::HasRawDisplayHandle;
 use winit::{event, event::Event, event_loop::EventLoop, window::Window, window::WindowBuilder};
 
 const VERTEX_DATA: [Vertex; 4] = [
     Vertex::new(-0.5, -0.5, 1.0, 0.0, 0.0),
-    Vertex::new(0.8, -0.5, 0.0, 1.0, 0.0),
+    Vertex::new(0.5, -0.5, 0.0, 1.0, 0.0),
     Vertex::new(0.5, 0.5, 0.0, 0.0, 1.0),
     Vertex::new(-0.5, 0.5, 1.0, 1.0, 1.0),
 ];
@@ -133,6 +136,9 @@ pub struct App {
     index_buffer: vk::Buffer,
     index_buffer_memory: vk::DeviceMemory,
 
+    texture_image: vk::Image,
+    texture_image_memory: vk::DeviceMemory,
+
     uniform_buffers: Vec<vk::Buffer>,
     uniform_buffers_memory: Vec<vk::DeviceMemory>,
 
@@ -209,6 +215,15 @@ impl App {
             &command_pool,
             &graphics_queue,
         );
+        let physical_device_memory_properties =
+            unsafe { instance.get_physical_device_memory_properties(physical_device) };
+        let (texture_image, texture_image_memory) = App::create_texture_image(
+            &device,
+            command_pool,
+            graphics_queue,
+            &physical_device_memory_properties,
+            &Path::new(TEXTURE_PATH),
+        );
 
         let (index_buffer, index_buffer_memory) = App::create_index_buffer(
             &instance,
@@ -280,6 +295,8 @@ impl App {
             uniform_buffers_memory,
             descriptor_pool,
             descriptor_sets,
+            texture_image,
+            texture_image_memory,
             frame: 0,
         })
     }
@@ -1705,6 +1722,353 @@ impl App {
         descriptor_sets
     }
 
+    fn create_texture_image(
+        device: &ash::Device,
+        command_pool: vk::CommandPool,
+        submit_queue: vk::Queue,
+        device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+        image_path: &Path,
+    ) -> (vk::Image, vk::DeviceMemory) {
+        let mut image_object = image::open(image_path).unwrap();
+
+        image_object = image_object.flipv();
+        let (image_width, image_height) = (image_object.width(), image_object.height());
+        let image_size =
+            (std::mem::size_of::<u8>() as u32 * image_width * image_height * 4) as vk::DeviceSize;
+
+        let image_data = match &image_object {
+            image::DynamicImage::ImageLuma8(_)
+            //| image::DynamicImage::ImageBgr8(_)
+            | image::DynamicImage::ImageRgb8(_) => image_object.to_rgba8().into_raw(),
+            //image::DynamicImage::ImageLumaA8(_)
+            //| image::DynamicImage::ImageBgra8(_)
+            //| image::DynamicImage::ImageRgba8(_) => image_object.raw_pixels(),
+            _ => panic!("other case for image data"),
+        };
+
+        if image_size <= 0 {
+            panic!("Couldn't load texture image.")
+        }
+
+        let (staging_buffer, staging_buffer_memory) = App::create_buffer(
+            device,
+            image_size,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            *device_memory_properties,
+        );
+
+        unsafe {
+            let data_ptr = device
+                .map_memory(
+                    staging_buffer_memory,
+                    0,
+                    image_size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .expect("Couldn't map memory.") as *mut u8;
+
+            data_ptr.copy_from_nonoverlapping(image_data.as_ptr(), image_data.len());
+
+            device.unmap_memory(staging_buffer_memory);
+        }
+
+        let (texture_image, texture_image_memory) = App::create_image(
+            device,
+            image_width,
+            image_height,
+            vk::Format::R8G8B8A8_UNORM,
+            vk::ImageTiling::OPTIMAL,
+            vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            device_memory_properties,
+        );
+
+        App::transition_image_layout(
+            device,
+            command_pool,
+            submit_queue,
+            texture_image,
+            vk::Format::R8G8B8A8_UNORM,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        );
+
+        App::copy_buffer_to_image(
+            device,
+            command_pool,
+            submit_queue,
+            staging_buffer,
+            texture_image,
+            image_width,
+            image_height,
+        );
+
+        App::transition_image_layout(
+            device,
+            command_pool,
+            submit_queue,
+            texture_image,
+            vk::Format::R8G8B8A8_UNORM,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        );
+
+        unsafe {
+            device.destroy_buffer(staging_buffer, None);
+            device.free_memory(staging_buffer_memory, None);
+        }
+
+        (texture_image, texture_image_memory)
+    }
+
+    fn create_image(
+        device: &ash::Device,
+        width: u32,
+        height: u32,
+        format: vk::Format,
+        tiling: vk::ImageTiling,
+        usage: vk::ImageUsageFlags,
+        required_memory_properties: vk::MemoryPropertyFlags,
+        device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+    ) -> (vk::Image, vk::DeviceMemory) {
+        let image_create_info = vk::ImageCreateInfo {
+            s_type: vk::StructureType::IMAGE_CREATE_INFO,
+            p_next: std::ptr::null(),
+            flags: vk::ImageCreateFlags::empty(),
+            image_type: vk::ImageType::TYPE_2D,
+            format,
+            extent: vk::Extent3D {
+                width,
+                height,
+                depth: 1,
+            },
+            mip_levels: 1,
+            array_layers: 1,
+            samples: vk::SampleCountFlags::TYPE_1,
+            tiling,
+            usage,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            queue_family_index_count: 0,
+            p_queue_family_indices: std::ptr::null(),
+            initial_layout: vk::ImageLayout::UNDEFINED,
+        };
+
+        let texture_image = unsafe {
+            device
+                .create_image(&image_create_info, None)
+                .expect("Couldn't create texture image.")
+        };
+
+        let image_memory_requirement =
+            unsafe { device.get_image_memory_requirements(texture_image) };
+        let memory_allocate_info = vk::MemoryAllocateInfo {
+            s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
+            p_next: std::ptr::null(),
+            allocation_size: image_memory_requirement.size,
+            memory_type_index: App::find_memory_type(
+                image_memory_requirement.memory_type_bits,
+                required_memory_properties,
+                *device_memory_properties,
+            ),
+        };
+
+        let texture_image_memory = unsafe {
+            device
+                .allocate_memory(&memory_allocate_info, None)
+                .expect("Couldn't allocate texture image memory.")
+        };
+
+        unsafe {
+            device
+                .bind_image_memory(texture_image, texture_image_memory, 0)
+                .expect("Couldn't bind image memory.");
+        }
+
+        (texture_image, texture_image_memory)
+    }
+
+    fn begin_single_time_command(
+        device: &ash::Device,
+        command_pool: vk::CommandPool,
+    ) -> vk::CommandBuffer {
+        let command_buffer_allocate_info = vk::CommandBufferAllocateInfo {
+            s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
+            p_next: std::ptr::null(),
+            command_buffer_count: 1,
+            command_pool,
+            level: vk::CommandBufferLevel::PRIMARY,
+        };
+
+        let command_buffer = unsafe {
+            device
+                .allocate_command_buffers(&command_buffer_allocate_info)
+                .expect("Failed to allocate Command Buffers!")
+        }[0];
+
+        let command_buffer_begin_info = vk::CommandBufferBeginInfo {
+            s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
+            p_next: std::ptr::null(),
+            p_inheritance_info: std::ptr::null(),
+            flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
+        };
+
+        unsafe {
+            device
+                .begin_command_buffer(command_buffer, &command_buffer_begin_info)
+                .expect("Failed to begin recording Command Buffer at beginning!");
+        }
+
+        command_buffer
+    }
+
+    fn end_single_time_command(
+        device: &ash::Device,
+        command_pool: vk::CommandPool,
+        submit_queue: vk::Queue,
+        command_buffer: vk::CommandBuffer,
+    ) {
+        unsafe {
+            device
+                .end_command_buffer(command_buffer)
+                .expect("Failed to record Command Buffer at Ending!");
+        }
+
+        let buffers_to_submit = [command_buffer];
+
+        let submit_infos = [vk::SubmitInfo {
+            s_type: vk::StructureType::SUBMIT_INFO,
+            p_next: std::ptr::null(),
+            wait_semaphore_count: 0,
+            p_wait_semaphores: std::ptr::null(),
+            p_wait_dst_stage_mask: std::ptr::null(),
+            command_buffer_count: 1,
+            p_command_buffers: buffers_to_submit.as_ptr(),
+            signal_semaphore_count: 0,
+            p_signal_semaphores: std::ptr::null(),
+        }];
+
+        unsafe {
+            device
+                .queue_submit(submit_queue, &submit_infos, vk::Fence::null())
+                .expect("Failed to Queue Submit!");
+            device
+                .queue_wait_idle(submit_queue)
+                .expect("Failed to wait Queue idle!");
+            device.free_command_buffers(command_pool, &buffers_to_submit);
+        }
+    }
+
+    fn transition_image_layout(
+        device: &ash::Device,
+        command_pool: vk::CommandPool,
+        submit_queue: vk::Queue,
+        image: vk::Image,
+        _format: vk::Format,
+        old_layout: vk::ImageLayout,
+        new_layout: vk::ImageLayout,
+    ) {
+        let command_buffer = App::begin_single_time_command(device, command_pool);
+
+        let src_access_mask;
+        let dst_access_mask;
+        let source_stage;
+        let destination_stage;
+
+        if old_layout == vk::ImageLayout::UNDEFINED
+            && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
+        {
+            src_access_mask = vk::AccessFlags::empty();
+            dst_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+            source_stage = vk::PipelineStageFlags::TOP_OF_PIPE;
+            destination_stage = vk::PipelineStageFlags::TRANSFER;
+        } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
+            && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
+        {
+            src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+            dst_access_mask = vk::AccessFlags::SHADER_READ;
+            source_stage = vk::PipelineStageFlags::TRANSFER;
+            destination_stage = vk::PipelineStageFlags::FRAGMENT_SHADER;
+        } else {
+            panic!("Unsupported layout transition!")
+        }
+
+        let image_barriers = [vk::ImageMemoryBarrier {
+            s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
+            p_next: std::ptr::null(),
+            src_access_mask,
+            dst_access_mask,
+            old_layout,
+            new_layout,
+            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            image,
+            subresource_range: vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            },
+        }];
+
+        unsafe {
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                source_stage,
+                destination_stage,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &image_barriers,
+            );
+        }
+
+        App::end_single_time_command(device, command_pool, submit_queue, command_buffer);
+    }
+
+    fn copy_buffer_to_image(
+        device: &ash::Device,
+        command_pool: vk::CommandPool,
+        submit_queue: vk::Queue,
+        buffer: vk::Buffer,
+        image: vk::Image,
+        width: u32,
+        height: u32,
+    ) {
+        let command_buffer = App::begin_single_time_command(device, command_pool);
+
+        let buffer_image_regions = [vk::BufferImageCopy {
+            image_subresource: vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+            },
+            image_extent: vk::Extent3D {
+                width,
+                height,
+                depth: 1,
+            },
+            buffer_offset: 0,
+            buffer_image_height: 0,
+            buffer_row_length: 0,
+            image_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
+        }];
+
+        unsafe {
+            device.cmd_copy_buffer_to_image(
+                command_buffer,
+                buffer,
+                image,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &buffer_image_regions,
+            );
+        }
+
+        App::end_single_time_command(device, command_pool, submit_queue, command_buffer);
+    }
+
     fn draw_frame(&mut self) {
         let wait_fences = [self.sync_objects.inflight_fences[self.frame]];
 
@@ -1827,6 +2191,9 @@ impl Drop for App {
             self.device.destroy_buffer(self.vertex_buffer, None);
             self.device.free_memory(self.vertex_buffer_memory, None);
 
+            self.device.destroy_image(self.texture_image, None);
+            self.device.free_memory(self.texture_image_memory, None);
+
             self.device.destroy_command_pool(self.command_pool, None);
 
             self.device.destroy_device(None);
@@ -1934,7 +2301,7 @@ fn array_to_string(array: &[c_char]) -> &str {
 }
 
 fn read_shader_code(file_name: &str) -> Vec<u8> {
-    let path = std::path::Path::new(file_name);
+    let path = Path::new(file_name);
     let file = std::fs::File::open(path).expect(&format!("Failed to find spv file at {:?}", path));
     file.bytes().flatten().collect::<Vec<u8>>()
 }
