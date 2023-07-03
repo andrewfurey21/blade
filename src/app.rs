@@ -18,10 +18,10 @@ use raw_window_handle::HasRawDisplayHandle;
 use winit::{event, event::Event, event_loop::EventLoop, window::Window, window::WindowBuilder};
 
 const VERTEX_DATA: [Vertex; 4] = [
-    Vertex::new(-0.5, -0.5, 1.0, 0.0, 0.0),
-    Vertex::new(0.5, -0.5, 0.0, 1.0, 0.0),
-    Vertex::new(0.5, 0.5, 0.0, 0.0, 1.0),
-    Vertex::new(-0.5, 0.5, 1.0, 1.0, 1.0),
+    Vertex::new(-0.75, -0.75, 1.0, 0.0, 0.0, 1.0, 0.0),
+    Vertex::new(0.75, -0.75, 0.0, 1.0, 0.0, 0.0, 0.0),
+    Vertex::new(0.75, 0.75, 0.0, 0.0, 1.0, 0.0, 1.0),
+    Vertex::new(-0.75, 0.75, 1.0, 1.0, 1.0, 1.0, 1.0),
 ];
 
 const INDICES_DATA: [u32; 6] = [2, 0, 1, 0, 2, 3];
@@ -138,6 +138,8 @@ pub struct App {
 
     texture_image: vk::Image,
     texture_image_memory: vk::DeviceMemory,
+    texture_image_view: vk::ImageView,
+    texture_sampler: vk::Sampler,
 
     uniform_buffers: Vec<vk::Buffer>,
     uniform_buffers_memory: Vec<vk::DeviceMemory>,
@@ -225,6 +227,9 @@ impl App {
             &Path::new(TEXTURE_PATH),
         );
 
+        let texture_image_view = App::create_texture_image_view(&device, texture_image);
+        let texture_sampler = App::create_texture_sampler(&device);
+
         let (index_buffer, index_buffer_memory) = App::create_index_buffer(
             &instance,
             &device,
@@ -248,6 +253,8 @@ impl App {
             ubo_layout,
             &uniform_buffers,
             swapchain_details.images.len(),
+            texture_image_view,
+            texture_sampler,
         );
 
         let command_buffers = App::create_command_buffers(
@@ -297,6 +304,8 @@ impl App {
             descriptor_sets,
             texture_image,
             texture_image_memory,
+            texture_image_view,
+            texture_sampler,
             frame: 0,
         })
     }
@@ -552,7 +561,9 @@ impl App {
             queue_create_infos.push(queue_create_info);
         }
 
-        let physical_device_features = vk::PhysicalDeviceFeatures::default();
+        let physical_device_features = vk::PhysicalDeviceFeatures::builder()
+            .sampler_anisotropy(true)
+            .build();
 
         let requred_validation_layer_raw_names: Vec<CString> = App::VALIDATION_LAYERS
             .iter()
@@ -566,18 +577,10 @@ impl App {
 
         let extensions = [ash::extensions::khr::Swapchain::name().as_ptr()];
 
-        let create_info = if VALIDATION_ENABLED {
-            vk::DeviceCreateInfo::builder()
-                .queue_create_infos(&queue_create_infos as &[vk::DeviceQueueCreateInfo])
-                .enabled_extension_names(&extensions)
-                //.enabled_layer_names(&enable_layer_names)
-                .enabled_features(&physical_device_features)
-        } else {
-            vk::DeviceCreateInfo::builder()
-                .queue_create_infos(&queue_create_infos as &[vk::DeviceQueueCreateInfo])
-                .enabled_extension_names(&extensions)
-                .enabled_features(&physical_device_features)
-        };
+        let create_info = vk::DeviceCreateInfo::builder()
+            .queue_create_infos(&queue_create_infos as &[vk::DeviceQueueCreateInfo])
+            .enabled_extension_names(&extensions)
+            .enabled_features(&physical_device_features);
 
         let device = unsafe {
             instance
@@ -1553,13 +1556,23 @@ impl App {
     }
 
     fn create_descriptor_set_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
-        let ubo_layout_bindings = [vk::DescriptorSetLayoutBinding {
-            binding: 0,
-            descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count: 1,
-            stage_flags: vk::ShaderStageFlags::VERTEX,
-            p_immutable_samplers: std::ptr::null(),
-        }];
+        let ubo_layout_bindings = [
+            vk::DescriptorSetLayoutBinding {
+                binding: 0,
+                descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::VERTEX,
+                p_immutable_samplers: std::ptr::null(),
+            },
+            vk::DescriptorSetLayoutBinding {
+                // sampler uniform
+                binding: 1,
+                descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: 1,
+                stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                p_immutable_samplers: std::ptr::null(),
+            },
+        ];
 
         let ubo_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -1647,10 +1660,17 @@ impl App {
         device: &ash::Device,
         swapchain_images_size: usize,
     ) -> vk::DescriptorPool {
-        let pool_sizes = [vk::DescriptorPoolSize {
-            ty: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count: swapchain_images_size as u32,
-        }];
+        let pool_sizes = [
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::UNIFORM_BUFFER,
+                descriptor_count: swapchain_images_size as u32,
+            },
+            vk::DescriptorPoolSize {
+                // sampler descriptor pool
+                ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: swapchain_images_size as u32,
+            },
+        ];
 
         let descriptor_pool_create_info = vk::DescriptorPoolCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
@@ -1674,6 +1694,8 @@ impl App {
         descriptor_set_layout: vk::DescriptorSetLayout,
         uniforms_buffers: &Vec<vk::Buffer>,
         swapchain_images_size: usize,
+        texture_image_view: vk::ImageView,
+        texture_sampler: vk::Sampler,
     ) -> Vec<vk::DescriptorSet> {
         let mut layouts: Vec<vk::DescriptorSetLayout> = vec![];
         for _ in 0..swapchain_images_size {
@@ -1701,18 +1723,39 @@ impl App {
                 range: std::mem::size_of::<UniformBufferObject>() as u64,
             }];
 
-            let descriptor_write_sets = [vk::WriteDescriptorSet {
-                s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
-                p_next: std::ptr::null(),
-                dst_set: descritptor_set,
-                dst_binding: 0,
-                dst_array_element: 0,
-                descriptor_count: 1,
-                descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
-                p_image_info: std::ptr::null(),
-                p_buffer_info: descriptor_buffer_info.as_ptr(),
-                p_texel_buffer_view: std::ptr::null(),
+            let descriptor_image_infos = [vk::DescriptorImageInfo {
+                sampler: texture_sampler,
+                image_view: texture_image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             }];
+
+            let descriptor_write_sets = [
+                vk::WriteDescriptorSet {
+                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                    p_next: std::ptr::null(),
+                    dst_set: descritptor_set,
+                    dst_binding: 0,
+                    dst_array_element: 0,
+                    descriptor_count: 1,
+                    descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+                    p_image_info: std::ptr::null(),
+                    p_buffer_info: descriptor_buffer_info.as_ptr(),
+                    p_texel_buffer_view: std::ptr::null(),
+                },
+                vk::WriteDescriptorSet {
+                    // sampler uniform
+                    s_type: vk::StructureType::WRITE_DESCRIPTOR_SET,
+                    p_next: std::ptr::null(),
+                    dst_set: descritptor_set,
+                    dst_binding: 1,
+                    dst_array_element: 0,
+                    descriptor_count: 1,
+                    descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    p_image_info: descriptor_image_infos.as_ptr(),
+                    p_buffer_info: std::ptr::null(),
+                    p_texel_buffer_view: std::ptr::null(),
+                },
+            ];
 
             unsafe {
                 device.update_descriptor_sets(&descriptor_write_sets, &[]);
@@ -1886,6 +1929,75 @@ impl App {
         }
 
         (texture_image, texture_image_memory)
+    }
+
+    fn create_texture_image_view(device: &ash::Device, texture_image: vk::Image) -> vk::ImageView {
+        let texture_image_view =
+            App::create_image_view(device, texture_image, vk::Format::R8G8B8A8_UNORM);
+        texture_image_view
+    }
+
+    fn create_image_view(
+        device: &ash::Device,
+        image: vk::Image,
+        format: vk::Format,
+    ) -> vk::ImageView {
+        let imageview_create_info = vk::ImageViewCreateInfo {
+            s_type: vk::StructureType::IMAGE_VIEW_CREATE_INFO,
+            p_next: std::ptr::null(),
+            flags: vk::ImageViewCreateFlags::empty(),
+            view_type: vk::ImageViewType::TYPE_2D,
+            format,
+            components: vk::ComponentMapping {
+                r: vk::ComponentSwizzle::IDENTITY,
+                g: vk::ComponentSwizzle::IDENTITY,
+                b: vk::ComponentSwizzle::IDENTITY,
+                a: vk::ComponentSwizzle::IDENTITY,
+            },
+            subresource_range: vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            },
+            image,
+        };
+
+        unsafe {
+            device
+                .create_image_view(&imageview_create_info, None)
+                .expect("Failed to create Image View!")
+        }
+    }
+
+    fn create_texture_sampler(device: &ash::Device) -> vk::Sampler {
+        let sampler_create_info = vk::SamplerCreateInfo {
+            s_type: vk::StructureType::SAMPLER_CREATE_INFO,
+            p_next: std::ptr::null(),
+            flags: vk::SamplerCreateFlags::empty(),
+            mag_filter: vk::Filter::LINEAR,
+            min_filter: vk::Filter::LINEAR,
+            mipmap_mode: vk::SamplerMipmapMode::LINEAR,
+            address_mode_u: vk::SamplerAddressMode::REPEAT,
+            address_mode_v: vk::SamplerAddressMode::REPEAT,
+            address_mode_w: vk::SamplerAddressMode::REPEAT,
+            mip_lod_bias: 0.0,
+            anisotropy_enable: vk::TRUE,
+            max_anisotropy: 16.0,
+            compare_enable: vk::FALSE,
+            compare_op: vk::CompareOp::ALWAYS,
+            min_lod: 0.0,
+            max_lod: 0.0,
+            border_color: vk::BorderColor::INT_OPAQUE_BLACK,
+            unnormalized_coordinates: vk::FALSE,
+        };
+
+        unsafe {
+            device
+                .create_sampler(&sampler_create_info, None)
+                .expect("Failed to create Sampler!")
+        }
     }
 
     fn begin_single_time_command(
@@ -2185,6 +2297,10 @@ impl Drop for App {
             }
 
             self.device
+                .destroy_image_view(self.texture_image_view, None);
+            self.device.destroy_sampler(self.texture_sampler, None);
+
+            self.device
                 .destroy_descriptor_set_layout(self.ubo_layout, None);
             self.device.destroy_buffer(self.index_buffer, None);
             self.device.free_memory(self.index_buffer_memory, None);
@@ -2214,14 +2330,20 @@ impl Drop for App {
 #[derive(Clone, Debug, Copy)]
 struct Vertex {
     pos: cgmath::Vector2<f32>,
+    tex_coord: cgmath::Vector2<f32>,
     color: cgmath::Vector3<f32>,
 }
 
 impl Vertex {
-    const fn new(x: f32, y: f32, r: f32, g: f32, b: f32) -> Self {
+    const fn new(x: f32, y: f32, r: f32, g: f32, b: f32, tx: f32, ty: f32) -> Self {
         let pos = cgmath::Vector2::new(x, y);
         let color = cgmath::Vector3::new(r, g, b);
-        Vertex { pos, color }
+        let tex_coord = cgmath::Vector2::new(tx, ty);
+        Vertex {
+            pos,
+            color,
+            tex_coord,
+        }
     }
 
     fn get_binding_descriptions() -> [vk::VertexInputBindingDescription; 1] {
@@ -2232,7 +2354,7 @@ impl Vertex {
         }]
     }
 
-    fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 2] {
+    fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
         [
             vk::VertexInputAttributeDescription {
                 location: 0,
@@ -2245,6 +2367,12 @@ impl Vertex {
                 location: 1,
                 format: vk::Format::R32G32B32_SFLOAT,
                 offset: offset_of!(Self, color) as u32,
+            },
+            vk::VertexInputAttributeDescription {
+                binding: 0,
+                location: 2,
+                format: vk::Format::R32G32B32_SFLOAT,
+                offset: offset_of!(Self, tex_coord) as u32,
             },
         ]
     }
