@@ -1,5 +1,5 @@
 use crate::app::App;
-use log::{error, info};
+use log::error;
 
 mod app;
 mod constants;
@@ -7,8 +7,6 @@ mod constants;
 fn main() {
     env_logger::init();
     // add checking for the shaders in main file
-    info!("Starting up application...");
-
     let event_loop = winit::event_loop::EventLoop::new();
     let app = App::new(&event_loop);
 
