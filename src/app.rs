@@ -15,22 +15,24 @@ use cgmath;
 use image;
 use memoffset::offset_of;
 use raw_window_handle::HasRawDisplayHandle;
+use tobj;
 use winit::{event, event::Event, event_loop::EventLoop, window::Window, window::WindowBuilder};
 
-const VERTEX_DATA: [Vertex; 8] = [
-    //
-    Vertex::new(-0.75, -0.75, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0),
-    Vertex::new(0.75, -0.75, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
-    Vertex::new(0.75, 0.75, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0),
-    Vertex::new(-0.75, 0.75, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0),
-    //
-    Vertex::new(-0.75, -0.75, 0.5, 1.0, 0.0, 0.0, 1.0, 0.0),
-    Vertex::new(0.75, -0.75, 0.5, 0.0, 1.0, 0.0, 0.0, 0.0),
-    Vertex::new(0.75, 0.75, 0.5, 0.0, 0.0, 1.0, 0.0, 1.0),
-    Vertex::new(-0.75, 0.75, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0),
-];
-
-const INDICES_DATA: [u32; 12] = [0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4];
+//const VERTEX_DATA: [Vertex; 8] = [
+//    //
+//    Vertex::new(-0.75, -0.75, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0),
+//    Vertex::new(0.75, -0.75, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
+//    Vertex::new(0.75, 0.75, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0),
+//    Vertex::new(-0.75, 0.75, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0),
+//    //
+//    Vertex::new(-0.75, -0.75, 0.5, 1.0, 0.0, 0.0, 1.0, 0.0),
+//    Vertex::new(0.75, -0.75, 0.5, 0.0, 1.0, 0.0, 0.0, 0.0),
+//    Vertex::new(0.75, 0.75, 0.5, 0.0, 0.0, 1.0, 0.0, 1.0),
+//    Vertex::new(-0.75, 0.75, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0),
+//];
+//
+//const INDICES_DATA: [u32; 12] = [0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4];
+//
 
 #[repr(C)]
 struct UniformBufferObject {
@@ -137,6 +139,9 @@ pub struct App {
     pipeline_layout: vk::PipelineLayout,
     graphics_pipeline: vk::Pipeline,
 
+    _vertices: Vec<Vertex>,
+    indices: Vec<u32>,
+
     vertex_buffer: vk::Buffer,
     vertex_buffer_memory: vk::DeviceMemory,
     index_buffer: vk::Buffer,
@@ -178,7 +183,7 @@ impl App {
 
         let entry = unsafe { ash::Entry::load() }.map_err(|_| "Coudn't create Vulkan entry")?;
         //let surface_extensions = App::get_surface_extensions(event_loop)?;
-
+        let (vertices, indices) = load_model(&Path::new(MODEL_PATH));
         let instance = App::create_instance(&entry)?;
 
         let surface_details = SurfaceDetails::new(&entry, &instance, &window, WIDTH, HEIGHT);
@@ -239,6 +244,7 @@ impl App {
             physical_device,
             &command_pool,
             &graphics_queue,
+            &vertices,
         );
 
         let (texture_image, texture_image_memory) = App::create_texture_image(
@@ -258,6 +264,7 @@ impl App {
             physical_device,
             command_pool,
             graphics_queue,
+            &indices,
         );
 
         let (uniform_buffers, uniform_buffers_memory) = App::create_uniform_buffers(
@@ -290,6 +297,7 @@ impl App {
             &index_buffer,
             &pipeline_layout,
             &descriptor_sets,
+            &indices,
         );
 
         let sync_objects = App::create_sync_objects(&device);
@@ -331,6 +339,8 @@ impl App {
             depth_image,
             depth_image_view,
             depth_image_memory,
+            _vertices: vertices,
+            indices,
             frame: 0,
         })
     }
@@ -1150,6 +1160,7 @@ impl App {
         index_buffer: &vk::Buffer,
         pipeline_layout: &vk::PipelineLayout,
         descriptor_sets: &Vec<vk::DescriptorSet>,
+        indices: &Vec<u32>,
     ) -> Vec<vk::CommandBuffer> {
         let allocate_info = vk::CommandBufferAllocateInfo::builder()
             .level(vk::CommandBufferLevel::PRIMARY)
@@ -1234,7 +1245,7 @@ impl App {
                     &[],
                 );
 
-                device.cmd_draw_indexed(command_buffer, INDICES_DATA.len() as u32, 1, 0, 0, 0);
+                device.cmd_draw_indexed(command_buffer, indices.len() as u32, 1, 0, 0, 0);
 
                 device.cmd_end_render_pass(command_buffer);
 
@@ -1404,6 +1415,7 @@ impl App {
             &self.index_buffer,
             &self.pipeline_layout,
             &self.descriptor_sets,
+            &self.indices,
         );
     }
 
@@ -1414,8 +1426,9 @@ impl App {
         physical_device: vk::PhysicalDevice,
         command_pool: &vk::CommandPool,
         submit_queue: &vk::Queue,
+        vertices: &Vec<Vertex>,
     ) -> (vk::Buffer, vk::DeviceMemory) {
-        let buffer_size = std::mem::size_of_val(&VERTEX_DATA) as vk::DeviceSize;
+        let buffer_size = std::mem::size_of_val(&vertices) as vk::DeviceSize;
         let device_memory_properties =
             unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
@@ -1440,7 +1453,7 @@ impl App {
                     vk::MemoryMapFlags::empty(),
                 )
                 .expect("Couldn't map memory.") as *mut Vertex;
-            data_ptr.copy_from_nonoverlapping(VERTEX_DATA.as_ptr(), VERTEX_DATA.len());
+            data_ptr.copy_from_nonoverlapping(vertices.as_ptr(), vertices.len());
 
             device.unmap_memory(staging_buffer_memory);
         }
@@ -1611,8 +1624,9 @@ impl App {
         physical_device: vk::PhysicalDevice,
         command_pool: vk::CommandPool,
         submit_queue: vk::Queue,
+        indices: &Vec<u32>,
     ) -> (vk::Buffer, vk::DeviceMemory) {
-        let buffer_size = std::mem::size_of_val(&INDICES_DATA) as vk::DeviceSize;
+        let buffer_size = std::mem::size_of_val(&indices) as vk::DeviceSize;
         let device_memory_properties =
             unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
@@ -1634,7 +1648,7 @@ impl App {
                 )
                 .expect("Failed to Map Memory") as *mut u32;
 
-            data_ptr.copy_from_nonoverlapping(INDICES_DATA.as_ptr(), INDICES_DATA.len());
+            data_ptr.copy_from_nonoverlapping(indices.as_ptr(), indices.len());
 
             device.unmap_memory(staging_buffer_memory);
         }
@@ -2529,15 +2543,26 @@ impl Drop for App {
 #[repr(C)]
 #[derive(Clone, Debug, Copy)]
 struct Vertex {
-    pos: cgmath::Vector3<f32>,
+    pos: cgmath::Vector4<f32>,
     tex_coord: cgmath::Vector2<f32>,
-    color: cgmath::Vector3<f32>,
+    color: cgmath::Vector4<f32>,
 }
 
 impl Vertex {
-    const fn new(x: f32, y: f32, z: f32, r: f32, g: f32, b: f32, tx: f32, ty: f32) -> Self {
-        let pos = cgmath::Vector3::new(x, y, z);
-        let color = cgmath::Vector3::new(r, g, b);
+    const fn new(
+        x: f32,
+        y: f32,
+        z: f32,
+        w: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+        tx: f32,
+        ty: f32,
+    ) -> Self {
+        let pos = cgmath::Vector4::new(x, y, z, w);
+        let color = cgmath::Vector4::new(r, g, b, a);
         let tex_coord = cgmath::Vector2::new(tx, ty);
         Vertex {
             pos,
@@ -2631,4 +2656,55 @@ fn read_shader_code(file_name: &str) -> Vec<u8> {
     let path = Path::new(file_name);
     let file = std::fs::File::open(path).expect(&format!("Failed to find spv file at {:?}", path));
     file.bytes().flatten().collect::<Vec<u8>>()
+}
+
+fn load_model(model_path: &Path) -> (Vec<Vertex>, Vec<u32>) {
+    let model_obj = tobj::load_obj(model_path, &tobj::LoadOptions::default())
+        .expect("Failed to load model object!");
+
+    let mut vertices = vec![];
+    let mut indices = vec![];
+
+    let (models, _) = model_obj;
+    for m in models.iter() {
+        let mesh = &m.mesh;
+
+        if mesh.texcoords.len() == 0 {
+            panic!("Missing texture coordinate for the model.")
+        }
+
+        let total_vertices_count = mesh.positions.len() / 3;
+        for i in 0..total_vertices_count {
+            //               let vertex = VertexV3 {
+            //                   pos: [
+            //                       mesh.positions[i * 3],
+            //                       mesh.positions[i * 3 + 1],
+            //                       mesh.positions[i * 3 + 2],
+            //                       1.0,
+            //                   ],
+            //                   color: [1.0, 1.0, 1.0, 1.0],
+            //                   tex_coord: [mesh.texcoords[i * 2], mesh.texcoords[i * 2 + 1]],
+            //               };
+            let x = mesh.positions[i * 3];
+            let y = mesh.positions[i * 3 + 1];
+            let z = mesh.positions[i * 3 + 2];
+            let vertex = Vertex::new(
+                x,
+                y,
+                z,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                mesh.texcoords[i * 2],
+                mesh.texcoords[i * 2 + 1],
+            );
+            vertices.push(vertex);
+        }
+
+        indices = mesh.indices.clone();
+    }
+
+    (vertices, indices)
 }

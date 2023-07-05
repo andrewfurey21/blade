@@ -6,4 +6,5 @@ pub const HEIGHT: u32 = 600;
 pub const VALIDATION_ENABLED: bool = true;
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
-pub const TEXTURE_PATH: &str = "assets/cube.jpg";
+pub const TEXTURE_PATH: &str = "assets/models/viking_room.png";
+pub const MODEL_PATH: &str = "assets/models/viking_room.obj";
