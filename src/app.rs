@@ -18,23 +18,8 @@ use raw_window_handle::HasRawDisplayHandle;
 use tobj;
 use winit::{event, event::Event, event_loop::EventLoop, window::Window, window::WindowBuilder};
 
-//const VERTEX_DATA: [Vertex; 8] = [
-//    //
-//    Vertex::new(-0.75, -0.75, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0),
-//    Vertex::new(0.75, -0.75, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
-//    Vertex::new(0.75, 0.75, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0),
-//    Vertex::new(-0.75, 0.75, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0),
-//    //
-//    Vertex::new(-0.75, -0.75, 0.5, 1.0, 0.0, 0.0, 1.0, 0.0),
-//    Vertex::new(0.75, -0.75, 0.5, 0.0, 1.0, 0.0, 0.0, 0.0),
-//    Vertex::new(0.75, 0.75, 0.5, 0.0, 0.0, 1.0, 0.0, 1.0),
-//    Vertex::new(-0.75, 0.75, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0),
-//];
-//
-//const INDICES_DATA: [u32; 12] = [0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4];
-//
-
 #[repr(C)]
+#[derive(Clone)]
 struct UniformBufferObject {
     model: cgmath::Matrix4<f32>,
     view: cgmath::Matrix4<f32>,
@@ -156,6 +141,7 @@ pub struct App {
     depth_image_view: vk::ImageView,
     depth_image_memory: vk::DeviceMemory,
 
+    uniform_transform: UniformBufferObject,
     uniform_buffers: Vec<vk::Buffer>,
     uniform_buffers_memory: Vec<vk::DeviceMemory>,
 
@@ -314,6 +300,25 @@ impl App {
             device,
             graphics_queue,
             present_queue,
+            uniform_transform: UniformBufferObject {
+                model: cgmath::Matrix4::from_angle_z(cgmath::Deg(90.0)),
+                view: cgmath::Matrix4::look_at_rh(
+                    cgmath::Point3::new(2.0, 2.0, 2.0),
+                    cgmath::Point3::new(0.0, 0.0, 0.0),
+                    cgmath::Vector3::new(0.0, 0.0, 1.0),
+                ),
+                proj: {
+                    let mut proj = cgmath::perspective(
+                        cgmath::Deg(45.0),
+                        swapchain_details.extent.width as f32
+                            / swapchain_details.extent.height as f32,
+                        0.1,
+                        10.0,
+                    );
+                    proj[1][1] = proj[1][1] * -1.0;
+                    proj
+                },
+            },
             swapchain_details,
             swapchain_image_views,
             swapchain_framebuffers,
@@ -935,7 +940,7 @@ impl App {
             .build();
 
         unsafe { device.create_render_pass(&render_pass_info, None) }
-            .expect("Couldn't create render pass")
+            .expect("Couldn't create render pass.")
     }
 
     fn create_graphics_pipeline(
@@ -965,16 +970,16 @@ impl App {
             .build();
 
         let shader_stages = [vert_shader_stage, frag_shader_stage];
+        let binding_descriptions = Vertex::get_binding_descriptions();
+        let attribute_descriptions = Vertex::get_attribute_descriptions();
 
         //     viewport, scissor for now, multiple viewports require setting feature
         let _dynamic_states = [vk::DynamicState::VIEWPORT]; // vk::DynamicState::SCISSOR];
 
-        let pipeline_dyn_states = vk::PipelineDynamicStateCreateInfo::builder()
+        let _pipeline_dyn_states = vk::PipelineDynamicStateCreateInfo::builder()
             //.dynamic_states(&dynamic_states)
             .build();
 
-        let binding_descriptions = Vertex::get_binding_descriptions();
-        let attribute_descriptions = Vertex::get_attribute_descriptions();
         //let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default();
         let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
             .vertex_binding_descriptions(&binding_descriptions)
@@ -1094,7 +1099,7 @@ impl App {
             .subpass(0)
             .base_pipeline_handle(vk::Pipeline::null())
             .base_pipeline_index(-1)
-            .dynamic_state(&pipeline_dyn_states)
+            //.dynamic_state(&pipeline_dyn_states)
             .depth_stencil_state(&depth_state_create_info)
             .build()];
 
@@ -1143,7 +1148,8 @@ impl App {
     ) -> vk::CommandPool {
         let create_info = vk::CommandPoolCreateInfo::builder()
             .queue_family_index(queue_indices.graphics_family.unwrap())
-            .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+            //.flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
+            .build();
 
         unsafe { device.create_command_pool(&create_info, None) }
             .expect("Couldn't create command pool")
@@ -1420,15 +1426,15 @@ impl App {
     }
 
     //TODO: maybe use gpu_allocator instead
-    fn create_vertex_buffer(
+    fn create_vertex_buffer<T>(
         instance: &ash::Instance,
         device: &ash::Device,
         physical_device: vk::PhysicalDevice,
         command_pool: &vk::CommandPool,
         submit_queue: &vk::Queue,
-        vertices: &Vec<Vertex>,
+        vertices: &[T],
     ) -> (vk::Buffer, vk::DeviceMemory) {
-        let buffer_size = std::mem::size_of_val(&vertices) as vk::DeviceSize;
+        let buffer_size = std::mem::size_of_val(vertices) as vk::DeviceSize;
         let device_memory_properties =
             unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
@@ -1452,7 +1458,7 @@ impl App {
                     buffer_size,
                     vk::MemoryMapFlags::empty(),
                 )
-                .expect("Couldn't map memory.") as *mut Vertex;
+                .expect("Couldn't map memory.") as *mut T;
             data_ptr.copy_from_nonoverlapping(vertices.as_ptr(), vertices.len());
 
             device.unmap_memory(staging_buffer_memory);
@@ -1558,7 +1564,7 @@ impl App {
     fn find_memory_type(
         type_filter: u32,
         required_properties: vk::MemoryPropertyFlags,
-        mem_properties: vk::PhysicalDeviceMemoryProperties,
+        mem_properties: &vk::PhysicalDeviceMemoryProperties,
     ) -> u32 {
         for (i, memory_type) in mem_properties.memory_types.iter().enumerate() {
             if (type_filter & (1 << i)) > 0
@@ -1593,7 +1599,7 @@ impl App {
         let memory_type = App::find_memory_type(
             mem_requirements.memory_type_bits,
             required_memory_flags,
-            device_memory_properties,
+            &device_memory_properties,
         );
 
         let allocate_info = vk::MemoryAllocateInfo {
@@ -1612,7 +1618,7 @@ impl App {
         unsafe {
             device
                 .bind_buffer_memory(buffer, buffer_memory, 0)
-                .expect("Failed to bind buffer.");
+                .expect("Couldn't bind buffer.");
         }
 
         (buffer, buffer_memory)
@@ -1624,9 +1630,9 @@ impl App {
         physical_device: vk::PhysicalDevice,
         command_pool: vk::CommandPool,
         submit_queue: vk::Queue,
-        indices: &Vec<u32>,
+        indices: &[u32],
     ) -> (vk::Buffer, vk::DeviceMemory) {
-        let buffer_size = std::mem::size_of_val(&indices) as vk::DeviceSize;
+        let buffer_size = std::mem::size_of_val(indices) as vk::DeviceSize;
         let device_memory_properties =
             unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
@@ -1646,7 +1652,7 @@ impl App {
                     buffer_size,
                     vk::MemoryMapFlags::empty(),
                 )
-                .expect("Failed to Map Memory") as *mut u32;
+                .expect("Couldn't map memory.") as *mut u32;
 
             data_ptr.copy_from_nonoverlapping(indices.as_ptr(), indices.len());
 
@@ -1741,7 +1747,7 @@ impl App {
         (uniform_buffers, uniform_buffers_memory)
     }
 
-    fn update_uniform_buffer(&self, current_image: usize) {
+    fn update_uniform_buffer(&mut self, current_image: usize) {
         let delta_time = 0.4;
         let ubos = [UniformBufferObject {
             model: cgmath::Matrix4::from_angle_z(cgmath::Deg(90.0 * delta_time)),
@@ -1750,15 +1756,18 @@ impl App {
                 cgmath::Point3::new(0.0, 0.0, 0.0),
                 cgmath::Vector3::new(0.0, 0.0, 1.0),
             ),
-            proj: cgmath::perspective(
-                cgmath::Deg(45.0),
-                self.swapchain_details.extent.width as f32
-                    / self.swapchain_details.extent.height as f32,
-                0.1,
-                10.0,
-            ),
+            proj: {
+                let mut proj = cgmath::perspective(
+                    cgmath::Deg(45.0),
+                    self.swapchain_details.extent.width as f32
+                        / self.swapchain_details.extent.height as f32,
+                    0.1,
+                    10.0,
+                );
+                //proj[1][1] = proj[1][1] * -1.0;
+                proj
+            },
         }];
-
         let buffer_size = (std::mem::size_of::<UniformBufferObject>() * ubos.len()) as u64;
 
         unsafe {
@@ -2039,7 +2048,7 @@ impl App {
             memory_type_index: App::find_memory_type(
                 image_memory_requirement.memory_type_bits,
                 required_memory_properties,
-                *device_memory_properties,
+                device_memory_properties,
             ),
         };
 
@@ -2584,19 +2593,19 @@ impl Vertex {
             vk::VertexInputAttributeDescription {
                 location: 0,
                 binding: 0,
-                format: vk::Format::R32G32B32_SFLOAT,
+                format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: offset_of!(Self, pos) as u32,
             },
             vk::VertexInputAttributeDescription {
                 binding: 0,
                 location: 1,
-                format: vk::Format::R32G32B32_SFLOAT,
+                format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: offset_of!(Self, color) as u32,
             },
             vk::VertexInputAttributeDescription {
                 binding: 0,
                 location: 2,
-                format: vk::Format::R32G32B32_SFLOAT,
+                format: vk::Format::R32G32_SFLOAT,
                 offset: offset_of!(Self, tex_coord) as u32,
             },
         ]
@@ -2659,6 +2668,11 @@ fn read_shader_code(file_name: &str) -> Vec<u8> {
 }
 
 fn load_model(model_path: &Path) -> (Vec<Vertex>, Vec<u32>) {
+    let load_options = tobj::LoadOptions {
+        triangulate: true,
+        single_index: true,
+        ..Default::default()
+    };
     let model_obj = tobj::load_obj(model_path, &tobj::LoadOptions::default())
         .expect("Failed to load model object!");
 
@@ -2667,7 +2681,7 @@ fn load_model(model_path: &Path) -> (Vec<Vertex>, Vec<u32>) {
 
     let (models, _) = model_obj;
     for m in models.iter() {
-        let mesh = &m.mesh;
+        let mut mesh = &m.mesh;
 
         if mesh.texcoords.len() == 0 {
             panic!("Missing texture coordinate for the model.")
@@ -2704,7 +2718,7 @@ fn load_model(model_path: &Path) -> (Vec<Vertex>, Vec<u32>) {
         }
 
         indices = mesh.indices.clone();
+        //indices.append(&mut mesh.indices.clone());
     }
-
     (vertices, indices)
 }
