@@ -408,7 +408,7 @@ impl App {
             .api_version(vk::API_VERSION_1_3)
             .build();
 
-        let debug_utils_create_info = populate_debug_messenger_create_info();
+        let mut debug_utils_create_info = populate_debug_messenger_create_info();
 
         let requred_validation_layer_raw_names: Vec<CString> = App::VALIDATION_LAYERS
             .iter()
@@ -420,29 +420,16 @@ impl App {
             .map(|layer_name| layer_name.as_ptr())
             .collect();
 
-        let instance_create_info = vk::InstanceCreateInfo {
-            s_type: vk::StructureType::INSTANCE_CREATE_INFO,
-            p_next: if VALIDATION_ENABLED {
-                &debug_utils_create_info as *const vk::DebugUtilsMessengerCreateInfoEXT
-                    as *const c_void
-            } else {
-                std::ptr::null()
-            },
-            flags: vk::InstanceCreateFlags::empty(),
-            p_application_info: &application_info,
-            pp_enabled_layer_names: if VALIDATION_ENABLED {
-                enable_layer_names.as_ptr()
-            } else {
-                std::ptr::null()
-            },
-            enabled_layer_count: if VALIDATION_ENABLED {
-                enable_layer_names.len()
-            } else {
-                0
-            } as u32,
-            pp_enabled_extension_names: App::REQUIRED_EXTENSION_NAMES.as_ptr(),
-            enabled_extension_count: App::REQUIRED_EXTENSION_NAMES.len() as u32,
-        };
+        let mut instance_create_info = vk::InstanceCreateInfo::builder()
+            .flags(vk::InstanceCreateFlags::empty())
+            .application_info(&application_info)
+            .enabled_layer_names(&enable_layer_names)
+            .enabled_extension_names(&App::REQUIRED_EXTENSION_NAMES)
+            .build();
+
+        if VALIDATION_ENABLED {
+            instance_create_info.p_next = &debug_utils_create_info as *const vk::DebugUtilsMessengerCreateInfoEXT as *const c_void;
+        }
 
         unsafe { entry.create_instance(&instance_create_info, None) }
             .map_err(|_| "Couldn't create instance.")
