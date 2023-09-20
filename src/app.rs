@@ -428,7 +428,9 @@ impl App {
             .build();
 
         if VALIDATION_ENABLED {
-            instance_create_info.p_next = &debug_utils_create_info as *const vk::DebugUtilsMessengerCreateInfoEXT as *const c_void;
+            instance_create_info.p_next = &debug_utils_create_info
+                as *const vk::DebugUtilsMessengerCreateInfoEXT
+                as *const c_void;
         }
 
         unsafe { entry.create_instance(&instance_create_info, None) }
@@ -523,12 +525,14 @@ impl App {
             && is_device_extension_supported
             && is_swapchain_supported;
     }
-
+    //TODO: improve panic handling
+    // maybe make a bit more generic, i.e pass in what properties you'd like.
     fn find_queue_family(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
         surface_details: &SurfaceDetails,
     ) -> QueueFamilyIndices {
+        //returns QueueFamilyProperties, which has QueueFlags, which contains bits that tell you properties of the queues.
         let queue_families =
             unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
 
@@ -1142,6 +1146,7 @@ impl App {
             .expect("Couldn't create command pool")
     }
 
+    //TODO: seperate recording from creation
     fn create_command_buffers(
         device: &ash::Device,
         command_pool: &vk::CommandPool,
@@ -1164,17 +1169,21 @@ impl App {
             .expect("Couldn't create command buffers.");
 
         for (i, &command_buffer) in command_buffers.iter().enumerate() {
-            let command_buffer_begin_info = vk::CommandBufferBeginInfo {
-                s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
-                p_next: std::ptr::null(),
-                p_inheritance_info: std::ptr::null(),
-                flags: vk::CommandBufferUsageFlags::SIMULTANEOUS_USE,
-            };
+            //let command_buffer_begin_info = vk::CommandBufferBeginInfo {
+            //    s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
+            //    p_next: std::ptr::null(),
+            //    p_inheritance_info: std::ptr::null(),
+            //    flags: vk::CommandBufferUsageFlags::SIMULTANEOUS_USE,
+            //};
+
+            let command_buffer_begin_info = vk::CommandBufferBeginInfo::builder()
+                .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE)
+                .build();
 
             unsafe {
                 device
                     .begin_command_buffer(command_buffer, &command_buffer_begin_info)
-                    .expect("Couldn't begin recording command buffer at beginning.");
+                    .expect("Couldn't begin recording command buffer.");
             }
 
             let clear_values = [
