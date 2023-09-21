@@ -934,6 +934,7 @@ impl App {
             .expect("Couldn't create render pass.")
     }
 
+    // TODO: parameterize a bit more, to be able to choose shaders etc.
     fn create_graphics_pipeline(
         device: &ash::Device,
         swapchain_details: &SwapchainDetails,
@@ -1139,7 +1140,7 @@ impl App {
     ) -> vk::CommandPool {
         let create_info = vk::CommandPoolCreateInfo::builder()
             .queue_family_index(queue_indices.graphics_family.unwrap())
-            //.flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
+            .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
             .build();
 
         unsafe { device.create_command_pool(&create_info, None) }
@@ -1169,13 +1170,6 @@ impl App {
             .expect("Couldn't create command buffers.");
 
         for (i, &command_buffer) in command_buffers.iter().enumerate() {
-            //let command_buffer_begin_info = vk::CommandBufferBeginInfo {
-            //    s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
-            //    p_next: std::ptr::null(),
-            //    p_inheritance_info: std::ptr::null(),
-            //    flags: vk::CommandBufferUsageFlags::SIMULTANEOUS_USE,
-            //};
-
             let command_buffer_begin_info = vk::CommandBufferBeginInfo::builder()
                 .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE)
                 .build();
@@ -1253,10 +1247,9 @@ impl App {
 
                 device
                     .end_command_buffer(command_buffer)
-                    .expect("Failed to record Command Buffer at Ending!");
+                    .expect("Could not finish recording the command buffer.");
             }
         }
-
         command_buffers
     }
 
@@ -1347,7 +1340,7 @@ impl App {
             height: self.window.inner_size().height,
         };
 
-        let swapchain_details = App::create_swapchain(
+        self.swapchain_details = App::create_swapchain(
             &self.instance,
             &self.device,
             self.physical_device,
@@ -1355,12 +1348,6 @@ impl App {
             &self.queue_indices,
             &self.window,
         );
-
-        self.swapchain_details.swapchain_loader = swapchain_details.swapchain_loader;
-        self.swapchain_details.swapchain = swapchain_details.swapchain;
-        self.swapchain_details.images = swapchain_details.images;
-        self.swapchain_details.format = swapchain_details.format;
-        self.swapchain_details.extent = swapchain_details.extent;
 
         self.swapchain_image_views = App::create_image_views(&self.device, &self.swapchain_details);
         self.render_pass = App::create_render_pass(
