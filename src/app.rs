@@ -2534,7 +2534,7 @@ unsafe extern "system" fn vulkan_debug_utils_callback(
         _ => "[Unknown]",
     };
     let message = CStr::from_ptr((*p_callback_data).p_message);
-    println!("[Debug]\n{}\n{}\n{:?}\n\n", severity, types, message);
+    println!("[Debug] : {} : {}\n{:?}\n", severity, types, message);
     vk::FALSE
 }
 
@@ -2542,12 +2542,13 @@ fn populate_debug_messenger_create_info() -> vk::DebugUtilsMessengerCreateInfoEX
     use vk::DebugUtilsMessageSeverityFlagsEXT as Severity;
     use vk::DebugUtilsMessageTypeFlagsEXT as Type;
 
+    //change based on build
     let severity = Severity::WARNING | Severity::ERROR; //| VERBOSE | INFO
-    let type_flags = Type::GENERAL | Type::PERFORMANCE | Type::VALIDATION;
+    let types = Type::GENERAL | Type::PERFORMANCE | Type::VALIDATION;
 
     vk::DebugUtilsMessengerCreateInfoEXT::builder()
         .message_severity(severity)
-        .message_type(type_flags)
+        .message_type(types)
         .pfn_user_callback(Some(vulkan_debug_utils_callback))
         .build()
 }
