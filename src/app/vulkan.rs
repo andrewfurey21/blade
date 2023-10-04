@@ -1,4 +1,4 @@
-use crate::constants::*;
+//use crate::constants::*;
 
 use std::collections::HashSet;
 use std::ffi::{c_char, CStr, CString};
@@ -18,6 +18,18 @@ use memoffset::offset_of;
 use raw_window_handle::HasRawDisplayHandle;
 use tobj;
 use winit::{event, event::Event, event_loop::EventLoop, window::Window, window::WindowBuilder};
+
+pub const TITLE: &str = "cad-rs";
+
+pub const WIDTH: u32 = 800;
+pub const HEIGHT: u32 = 600;
+
+//TODO:change to false if in release mode, else true in debug mode, build.rs
+pub const VALIDATION_ENABLED: bool = true;
+pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
+
+pub const TEXTURE_PATH: &str = "assets/models/viking_room.png";
+pub const MODEL_PATH: &str = "assets/models/viking_room.obj";
 
 struct ShaderDetails {
     path: Box<Path>,
