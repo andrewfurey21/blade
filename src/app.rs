@@ -6,6 +6,7 @@ use std::io::prelude::*;
 use std::os::raw::c_void;
 use std::path::Path;
 
+use anyhow::{bail, Result};
 use ash::extensions::ext::DebugUtils;
 use ash::extensions::khr::Surface;
 use ash::extensions::khr::WaylandSurface;
@@ -17,6 +18,75 @@ use memoffset::offset_of;
 use raw_window_handle::HasRawDisplayHandle;
 use tobj;
 use winit::{event, event::Event, event_loop::EventLoop, window::Window, window::WindowBuilder};
+
+struct ShaderDetails {
+    path: Box<Path>,
+    entry_point: String,
+    shader_stage: vk::ShaderStageFlags,
+    code: Vec<u8>,
+    module: vk::ShaderModule,
+}
+
+impl ShaderDetails {
+    fn new(device: &ash::Device, file_name: &str, entry_point: &str) -> Result<ShaderDetails> {
+        let entry_point = String::from(entry_point);
+        let path = Path::new(file_name);
+        if path.exists() {
+            let shader_stage = {
+                let stem = path
+                    .file_stem()
+                    .expect("Shader has no file stem.")
+                    .to_str()
+                    .unwrap();
+
+                let shader_type = if stem == "frag" {
+                    vk::ShaderStageFlags::FRAGMENT
+                } else if stem == "vert" {
+                    vk::ShaderStageFlags::VERTEX
+                } else {
+                    bail!(
+                        "Shader type {} does not exist or has not been implemented.",
+                        stem
+                    )
+                };
+                shader_type
+            };
+            let file = std::fs::File::open(path)
+                .expect(&format!("Failed to open file \"{}\"", path.display()));
+            let code = file.bytes().flatten().collect::<Vec<u8>>();
+            let module = ShaderDetails::create_shader_module(device, &code);
+            return Ok(ShaderDetails {
+                path: path.into(),
+                entry_point,
+                shader_stage,
+                code,
+                module,
+            });
+        } else {
+            bail!("\"{}\" does not exist.", path.display());
+        }
+    }
+
+    fn create_shader_module(device: &ash::Device, bytes: &Vec<u8>) -> vk::ShaderModule {
+        let shader_module_create_info = vk::ShaderModuleCreateInfo {
+            code_size: bytes.len(),
+            p_code: bytes.as_ptr() as *const u32,
+            ..Default::default()
+        };
+        unsafe {
+            device
+                .create_shader_module(&shader_module_create_info, None)
+                .expect("Couldn't create shader module.")
+        }
+    }
+
+    fn read_shader_code(file_name: &str) -> Vec<u8> {
+        let path = Path::new(file_name);
+        let file =
+            std::fs::File::open(path).expect(&format!("Failed to find spv file at {:?}", path));
+        file.bytes().flatten().collect::<Vec<u8>>()
+    }
+}
 
 #[repr(C)]
 #[derive(Clone)]
@@ -151,6 +221,7 @@ pub struct App {
 
     render_pass: vk::RenderPass,
     ubo_layout: vk::DescriptorSetLayout,
+    shader_details: Vec<ShaderDetails>,
     pipeline_layout: vk::PipelineLayout,
     graphics_pipeline: vk::Pipeline,
 
@@ -234,8 +305,19 @@ impl App {
         let render_pass =
             App::create_render_pass(&instance, physical_device, &device, &swapchain_details);
         let ubo_layout = App::create_descriptor_set_layout(&device);
-        let (graphics_pipeline, pipeline_layout) =
-            App::create_graphics_pipeline(&device, &swapchain_details, &render_pass, &ubo_layout);
+
+        let shader_details = vec![
+            ShaderDetails::new(&device, "shaders/spv/vert.spv", "main").unwrap(),
+            ShaderDetails::new(&device, "shaders/spv/frag.spv", "main").unwrap(),
+        ];
+
+        let (graphics_pipeline, pipeline_layout) = App::create_graphics_pipeline(
+            &device,
+            &swapchain_details,
+            &render_pass,
+            &ubo_layout,
+            &shader_details,
+        );
         let (depth_image, depth_image_view, depth_image_memory) = App::create_depth_resources(
             &instance,
             &device,
@@ -354,6 +436,7 @@ impl App {
             swapchain_image_views,
             swapchain_framebuffers,
             render_pass,
+            shader_details,
             graphics_pipeline,
             pipeline_layout,
             command_pool,
@@ -439,7 +522,7 @@ impl App {
             .api_version(vk::API_VERSION_1_3)
             .build();
 
-        let mut debug_utils_create_info = populate_debug_messenger_create_info();
+        let debug_utils_create_info = populate_debug_messenger_create_info();
 
         let requred_validation_layer_raw_names: Vec<CString> = App::VALIDATION_LAYERS
             .iter()
@@ -558,8 +641,7 @@ impl App {
             && is_device_extension_supported
             && is_swapchain_supported;
     }
-    //TODO: improve panic handling
-    // maybe make a bit more generic, i.e pass in what properties you'd like.
+
     fn find_queue_family(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
@@ -637,22 +719,11 @@ impl App {
             .sampler_anisotropy(true)
             .build();
 
-        let required_validation_layer_raw_names: Vec<CString> = App::VALIDATION_LAYERS
-            .iter()
-            .map(|layer_name| CString::new(*layer_name).unwrap())
-            .collect();
-
-        let enable_layer_names: Vec<*const c_char> = required_validation_layer_raw_names
-            .iter()
-            .map(|layer_name| layer_name.as_ptr())
-            .collect();
-
         let extensions = [ash::extensions::khr::Swapchain::name().as_ptr()];
 
         let create_info = vk::DeviceCreateInfo::builder()
             .queue_create_infos(&queue_create_infos as &[vk::DeviceQueueCreateInfo])
             .enabled_extension_names(&extensions)
-            .enabled_layer_names(&enable_layer_names)
             .enabled_features(&physical_device_features);
 
         let device = unsafe {
@@ -718,7 +789,7 @@ impl App {
             image_count
         };
 
-        let (image_sharing_mode, queue_family_index_count, queue_family_indices) =
+        let (image_sharing_mode, _queue_family_index_count, queue_family_indices) =
             if queue_indices.graphics_family != queue_indices.present_family {
                 (
                     vk::SharingMode::CONCURRENT,
@@ -859,19 +930,6 @@ impl App {
         image_views
     }
 
-    fn create_shader_module(device: &ash::Device, bytes: &Vec<u8>) -> vk::ShaderModule {
-        let shader_module_create_info = vk::ShaderModuleCreateInfo {
-            code_size: bytes.len(),
-            p_code: bytes.as_ptr() as *const u32,
-            ..Default::default()
-        };
-        unsafe {
-            device
-                .create_shader_module(&shader_module_create_info, None)
-                .expect("Couldn't create shader module.")
-        }
-    }
-
     fn create_render_pass(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
@@ -939,34 +997,45 @@ impl App {
             .expect("Couldn't create render pass.")
     }
 
-    // TODO: parameterize a bit more, to be able to choose shaders etc.
     fn create_graphics_pipeline(
         device: &ash::Device,
         swapchain_details: &SwapchainDetails,
         render_pass: &vk::RenderPass,
         ubo_layout: &vk::DescriptorSetLayout,
+        shaders: &[ShaderDetails],
     ) -> (vk::Pipeline, vk::PipelineLayout) {
-        let vert_shader_code = read_shader_code("shaders/spv/vert.spv");
-        let frag_shader_code = read_shader_code("shaders/spv/frag.spv");
+        let mut shader_stages_create_info: Vec<vk::PipelineShaderStageCreateInfo> = vec![];
+        let entry_point = CString::new("main").expect("Couldn't make c string.");
+        for shader in shaders {
+            let shader_stage_create_info = vk::PipelineShaderStageCreateInfo::builder()
+                .name(entry_point.as_c_str())
+                .stage(shader.shader_stage)
+                .module(shader.module)
+                .build();
+            shader_stages_create_info.push(shader_stage_create_info);
+        }
 
-        let vertex_module = App::create_shader_module(device, &vert_shader_code);
-        let frag_module = App::create_shader_module(device, &frag_shader_code);
+        //let vert_shader_code = ShaderDetails::read_shader_code("shaders/spv/vert.spv");
+        //let frag_shader_code = ShaderDetails::read_shader_code("shaders/spv/frag.spv");
 
-        let main_function_name = CString::new("main").expect("Couldn't make c string.");
+        //let vertex_module = App::create_shader_module(device, &vert_shader_code);
+        //let frag_module = App::create_shader_module(device, &frag_shader_code);
 
-        let vert_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
-            .name(main_function_name.as_c_str())
-            .stage(vk::ShaderStageFlags::VERTEX)
-            .module(vertex_module)
-            .build();
+        //let main_function_name = CString::new("main").expect("Couldn't make c string.");
 
-        let frag_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
-            .name(main_function_name.as_c_str())
-            .stage(vk::ShaderStageFlags::FRAGMENT)
-            .module(frag_module)
-            .build();
+        //let vert_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
+        //    .name(main_function_name.as_c_str())
+        //    .stage(vk::ShaderStageFlags::VERTEX)
+        //    .module(vertex_module)
+        //    .build();
 
-        let shader_stages = [vert_shader_stage, frag_shader_stage];
+        //let frag_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
+        //    .name(main_function_name.as_c_str())
+        //    .stage(vk::ShaderStageFlags::FRAGMENT)
+        //    .module(frag_module)
+        //    .build();
+
+        //let shader_stages_create_info = [vert_shader_stage, frag_shader_stage];
         let binding_descriptions = Vertex::get_binding_descriptions();
         let attribute_descriptions = Vertex::get_attribute_descriptions();
 
@@ -1041,7 +1110,6 @@ impl App {
             .max_depth_bounds(1.0)
             .build();
 
-        //TODO: fix for coloring based on opacity
         let color_blend_attachment_state_create_info =
             vk::PipelineColorBlendAttachmentState::builder()
                 .color_write_mask(vk::ColorComponentFlags::RGBA)
@@ -1073,7 +1141,7 @@ impl App {
         };
 
         let pipeline_info = [vk::GraphicsPipelineCreateInfo::builder()
-            .stages(&shader_stages)
+            .stages(&shader_stages_create_info)
             .vertex_input_state(&vertex_input_info)
             .input_assembly_state(&input_assembly_state)
             .viewport_state(&viewport_state_create_info)
@@ -1095,10 +1163,10 @@ impl App {
                 .expect("Couldn't create graphics pipeline.")
         };
 
-        unsafe {
-            device.destroy_shader_module(vertex_module, None);
-            device.destroy_shader_module(frag_module, None);
-        }
+        //unsafe {
+        //    device.destroy_shader_module(vertex_module, None);
+        //    device.destroy_shader_module(frag_module, None);
+        //}
         (graphics_pipelines[0], pipeline_layout)
     }
 
@@ -1141,7 +1209,6 @@ impl App {
             .expect("Couldn't create command pool")
     }
 
-    //TODO: seperate recording from creation
     fn create_command_buffers(
         device: &ash::Device,
         command_pool: &vk::CommandPool,
@@ -1253,12 +1320,9 @@ impl App {
         };
 
         let semaphore_create_info = vk::SemaphoreCreateInfo {
-            s_type: vk::StructureType::SEMAPHORE_CREATE_INFO,
-            p_next: std::ptr::null(),
-            flags: vk::SemaphoreCreateFlags::empty(),
+            ..Default::default()
         };
 
-        let semaphore_create_info = vk::SemaphoreCreateInfo::builder().build();
         let fence_create_info = vk::FenceCreateInfo::builder()
             .flags(vk::FenceCreateFlags::SIGNALED)
             .build();
@@ -1353,6 +1417,7 @@ impl App {
             &self.swapchain_details,
             &self.render_pass,
             &self.ubo_layout,
+            &self.shader_details,
         );
 
         self.graphics_pipeline = graphics_pipeline;
@@ -1369,7 +1434,6 @@ impl App {
             self.command_pool,
             self.graphics_queue,
             self.swapchain_details.extent,
-            // TODO: make member
             &physical_device_memory_properties,
         );
         self.depth_image = depth_resources.0;
@@ -1399,12 +1463,6 @@ impl App {
         );
     }
 
-    //TODO: maybe use gpu_allocator instead
-    // create staging buffer, used for transfer
-    // copy data from vertieces to staging buffer
-    // create vertex buffer with flag vertex buffer as transfer dest
-    // copy from staging buffer to vertex buffer
-    // return vertex buffer and memory
     fn create_vertex_buffer<T>(
         instance: &ash::Instance,
         device: &ash::Device,
@@ -1534,7 +1592,6 @@ impl App {
         panic!("Couldn't find suitable memory type.")
     }
 
-    //TODO: use gpu allocator
     fn create_buffer(
         device: &ash::Device,
         size: vk::DeviceSize,
@@ -1671,7 +1728,6 @@ impl App {
         }
     }
 
-    //TODO: go over device_memory_properties
     fn create_uniform_buffers(
         instance: &ash::Instance,
         device: &ash::Device,
@@ -1712,7 +1768,7 @@ impl App {
                 cgmath::Vector3::new(0.0, 0.0, 1.0),
             ),
             proj: {
-                let mut proj = cgmath::perspective(
+                let proj = cgmath::perspective(
                     cgmath::Deg(45.0),
                     self.swapchain_details.extent.width as f32
                         / self.swapchain_details.extent.height as f32,
@@ -1845,7 +1901,6 @@ impl App {
         let image_size =
             (std::mem::size_of::<u8>() as u32 * image_width * image_height * 4) as vk::DeviceSize;
 
-        //TODO: fix other cases for image data
         let image_data = match &image_object {
             image::DynamicImage::ImageLuma8(_)
             //| image::DynamicImage::ImageBgr8(_)
@@ -1937,7 +1992,6 @@ impl App {
         (texture_image, texture_image_memory)
     }
 
-    //TODO: gpu allocator?
     fn create_image(
         device: &ash::Device,
         width: u32,
@@ -2018,7 +2072,7 @@ impl App {
         image: vk::Image,
         format: vk::Format,
         aspect_flags: vk::ImageAspectFlags,
-        mip_levels: u32,
+        _mip_levels: u32,
     ) -> vk::ImageView {
         let image_view_create_info = vk::ImageViewCreateInfo::builder()
             .view_type(vk::ImageViewType::TYPE_2D)
@@ -2289,7 +2343,6 @@ impl App {
         tiling: vk::ImageTiling,
         features: vk::FormatFeatureFlags,
     ) -> vk::Format {
-        //TODO:use map or other functions
         for &format in candidate_formats.iter() {
             let format_properties =
                 unsafe { instance.get_physical_device_format_properties(physical_device, format) };
@@ -2337,25 +2390,14 @@ impl App {
         let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
         let signal_semaphores = [self.sync_objects.render_finished_semaphores[self.frame]];
 
-        let submit_infos = [vk::SubmitInfo {
-            s_type: vk::StructureType::SUBMIT_INFO,
-            p_next: std::ptr::null(),
-            wait_semaphore_count: wait_semaphores.len() as u32,
-            p_wait_semaphores: wait_semaphores.as_ptr(),
-            p_wait_dst_stage_mask: wait_stages.as_ptr(),
-            command_buffer_count: 1,
-            p_command_buffers: &self.command_buffers[image_index as usize],
-            signal_semaphore_count: signal_semaphores.len() as u32,
-            p_signal_semaphores: signal_semaphores.as_ptr(),
-        }];
-
         let command_buffers = [self.command_buffers[image_index as usize]];
 
-        let submit_info = vk::SubmitInfo::builder()
+        let submit_infos = [vk::SubmitInfo::builder()
             .wait_semaphores(&wait_semaphores)
             .wait_dst_stage_mask(&wait_stages)
             .command_buffers(&command_buffers)
-            .signal_semaphores(&signal_semaphores);
+            .signal_semaphores(&signal_semaphores)
+            .build()];
 
         unsafe {
             self.device
@@ -2400,6 +2442,9 @@ impl App {
 impl Drop for App {
     fn drop(&mut self) {
         unsafe {
+            for shader in &self.shader_details {
+                self.device.destroy_shader_module(shader.module, None);
+            }
             for i in 0..MAX_FRAMES_IN_FLIGHT {
                 self.device
                     .destroy_semaphore(self.sync_objects.image_available_semaphores[i], None);
@@ -2513,7 +2558,6 @@ impl Vertex {
     }
 }
 
-//TODO:
 unsafe extern "system" fn vulkan_debug_utils_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
     message_type: vk::DebugUtilsMessageTypeFlagsEXT,
@@ -2542,8 +2586,7 @@ fn populate_debug_messenger_create_info() -> vk::DebugUtilsMessengerCreateInfoEX
     use vk::DebugUtilsMessageSeverityFlagsEXT as Severity;
     use vk::DebugUtilsMessageTypeFlagsEXT as Type;
 
-    //change based on build
-    let severity = Severity::WARNING | Severity::ERROR; //| VERBOSE | INFO
+    let severity = Severity::WARNING | Severity::ERROR | Severity::VERBOSE | Severity::INFO;
     let types = Type::GENERAL | Type::PERFORMANCE | Type::VALIDATION;
 
     vk::DebugUtilsMessengerCreateInfoEXT::builder()
@@ -2561,14 +2604,8 @@ fn array_to_string(array: &[c_char]) -> &str {
         .expect("Failed to convert vulkan raw string.")
 }
 
-fn read_shader_code(file_name: &str) -> Vec<u8> {
-    let path = Path::new(file_name);
-    let file = std::fs::File::open(path).expect(&format!("Failed to find spv file at {:?}", path));
-    file.bytes().flatten().collect::<Vec<u8>>()
-}
-
 fn load_model(model_path: &Path) -> (Vec<Vertex>, Vec<u32>) {
-    let load_options = tobj::LoadOptions {
+    let _load_options = tobj::LoadOptions {
         triangulate: true,
         single_index: true,
         ..Default::default()
@@ -2581,7 +2618,7 @@ fn load_model(model_path: &Path) -> (Vec<Vertex>, Vec<u32>) {
 
     let (models, _) = model_obj;
     for m in models.iter() {
-        let mut mesh = &m.mesh;
+        let mesh = &m.mesh;
 
         if mesh.texcoords.len() == 0 {
             panic!("Missing texture coordinate for the model.")

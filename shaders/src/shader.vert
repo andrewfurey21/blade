@@ -1,5 +1,3 @@
-
-
 #version 450
 
 #extension GL_ARB_separate_shader_objects : enable
@@ -22,7 +20,6 @@ out gl_PerVertex {
 };
 
 void main() {
-
     gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition, 1.0);
     fragColor = inColor;
     fragTexCoord = inTexCoord;

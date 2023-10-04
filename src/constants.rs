@@ -3,7 +3,7 @@ pub const TITLE: &str = "cad-rs";
 pub const WIDTH: u32 = 800;
 pub const HEIGHT: u32 = 600;
 
-//change to false if in release mode, else true in debug mode, build.rs
+//TODO:change to false if in release mode, else true in debug mode, build.rs
 pub const VALIDATION_ENABLED: bool = true;
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
