@@ -1,4 +1,5 @@
-use crate::app::{utility, validation, shader};
+use crate::app::{shader, utility, validation};
+use crate::math::vertex;
 
 use std::collections::HashSet;
 use std::ffi::{c_char, CString};
@@ -27,7 +28,6 @@ pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 pub const TEXTURE_PATH: &str = "assets/models/viking_room.png";
 pub const MODEL_PATH: &str = "assets/models/viking_room.obj";
-
 
 #[repr(C)]
 #[derive(Clone)]
@@ -167,7 +167,7 @@ pub struct App {
     pipeline_layout: vk::PipelineLayout,
     graphics_pipeline: vk::Pipeline,
 
-    _vertices: Vec<Vertex>,
+    _vertices: Vec<vertex::Vertex>,
     indices: Vec<u32>,
 
     vertex_buffer: vk::Buffer,
@@ -908,8 +908,8 @@ impl App {
             shader_stages_create_info.push(shader_stage_create_info);
         }
 
-        let binding_descriptions = Vertex::get_binding_descriptions();
-        let attribute_descriptions = Vertex::get_attribute_descriptions();
+        let binding_descriptions = vertex::Vertex::get_binding_descriptions();
+        let attribute_descriptions = vertex::Vertex::get_attribute_descriptions();
 
         let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
             .vertex_binding_descriptions(&binding_descriptions)
@@ -2360,72 +2360,8 @@ impl Drop for App {
     }
 }
 
-//should be in math module
-#[repr(C)]
-#[derive(Clone, Debug, Copy)]
-struct Vertex {
-    pos: cgmath::Vector4<f32>,
-    tex_coord: cgmath::Vector2<f32>,
-    color: cgmath::Vector4<f32>,
-}
-
-impl Vertex {
-    const fn new(
-        x: f32,
-        y: f32,
-        z: f32,
-        w: f32,
-        r: f32,
-        g: f32,
-        b: f32,
-        a: f32,
-        tx: f32,
-        ty: f32,
-    ) -> Self {
-        let pos = cgmath::Vector4::new(x, y, z, w);
-        let color = cgmath::Vector4::new(r, g, b, a);
-        let tex_coord = cgmath::Vector2::new(tx, ty);
-        Vertex {
-            pos,
-            color,
-            tex_coord,
-        }
-    }
-
-    fn get_binding_descriptions() -> [vk::VertexInputBindingDescription; 1] {
-        [vk::VertexInputBindingDescription {
-            binding: 0,
-            stride: std::mem::size_of::<Self>() as u32,
-            input_rate: vk::VertexInputRate::VERTEX,
-        }]
-    }
-
-    fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
-        [
-            vk::VertexInputAttributeDescription {
-                location: 0,
-                binding: 0,
-                format: vk::Format::R32G32B32A32_SFLOAT,
-                offset: offset_of!(Self, pos) as u32,
-            },
-            vk::VertexInputAttributeDescription {
-                binding: 0,
-                location: 1,
-                format: vk::Format::R32G32B32A32_SFLOAT,
-                offset: offset_of!(Self, color) as u32,
-            },
-            vk::VertexInputAttributeDescription {
-                binding: 0,
-                location: 2,
-                format: vk::Format::R32G32_SFLOAT,
-                offset: offset_of!(Self, tex_coord) as u32,
-            },
-        ]
-    }
-}
-
 //should be in io
-fn load_model(model_path: &Path) -> (Vec<Vertex>, Vec<u32>) {
+fn load_model(model_path: &Path) -> (Vec<vertex::Vertex>, Vec<u32>) {
     let _load_options = tobj::LoadOptions {
         triangulate: true,
         single_index: true,
@@ -2450,7 +2386,7 @@ fn load_model(model_path: &Path) -> (Vec<Vertex>, Vec<u32>) {
             let x = mesh.positions[i * 3];
             let y = mesh.positions[i * 3 + 1];
             let z = mesh.positions[i * 3 + 2];
-            let vertex = Vertex::new(
+            let vertex = vertex::Vertex::new(
                 x,
                 y,
                 z,

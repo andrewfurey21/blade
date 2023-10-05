@@ -14,12 +14,13 @@ A CAD tool written in Rust
 
 - image
 - application (vulkan, rendering, window, keyboard/mouse io)
-- geometry manipulation code (probably includes fonts)
+- math/geometry manipulation code (probably includes fonts)
 - gui related code
 - file io (saving models, outputting models to different formats, loading models, version control)
 
 ### Features To implement:
-- [ ] Image: Decode bitmap, png, jpg, svg
+- [ ] Fast!
+- [ ] Image: Decode bitmap, png, jpg, svg, edge detection
 - [ ] Application: fast vulkan code for rendering 
 - [ ] Version control: make branches, save operations instantly, scroll back through time easily
 - [ ] Decent gui 
