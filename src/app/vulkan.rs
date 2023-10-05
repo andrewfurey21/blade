@@ -1,12 +1,11 @@
-//use crate::constants::*;
+use crate::app::{utility, validation, shader};
 
 use std::collections::HashSet;
-use std::ffi::{c_char, CStr, CString};
-use std::io::prelude::*;
+use std::ffi::{c_char, CString};
 use std::os::raw::c_void;
 use std::path::Path;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use ash::extensions::ext::DebugUtils;
 use ash::extensions::khr::Surface;
 use ash::extensions::khr::WaylandSurface;
@@ -24,81 +23,11 @@ pub const TITLE: &str = "cad-rs";
 pub const WIDTH: u32 = 800;
 pub const HEIGHT: u32 = 600;
 
-//TODO:change to false if in release mode, else true in debug mode, build.rs
-pub const VALIDATION_ENABLED: bool = true;
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 pub const TEXTURE_PATH: &str = "assets/models/viking_room.png";
 pub const MODEL_PATH: &str = "assets/models/viking_room.obj";
 
-struct ShaderDetails {
-    path: Box<Path>,
-    entry_point: String,
-    shader_stage: vk::ShaderStageFlags,
-    code: Vec<u8>,
-    module: vk::ShaderModule,
-}
-
-impl ShaderDetails {
-    fn new(device: &ash::Device, file_name: &str, entry_point: &str) -> Result<ShaderDetails> {
-        let entry_point = String::from(entry_point);
-        let path = Path::new(file_name);
-        if path.exists() {
-            let shader_stage = {
-                let stem = path
-                    .file_stem()
-                    .expect("Shader has no file stem.")
-                    .to_str()
-                    .unwrap();
-
-                let shader_type = if stem == "frag" {
-                    vk::ShaderStageFlags::FRAGMENT
-                } else if stem == "vert" {
-                    vk::ShaderStageFlags::VERTEX
-                } else {
-                    bail!(
-                        "Shader type {} does not exist or has not been implemented.",
-                        stem
-                    )
-                };
-                shader_type
-            };
-            let file = std::fs::File::open(path)
-                .expect(&format!("Failed to open file \"{}\"", path.display()));
-            let code = file.bytes().flatten().collect::<Vec<u8>>();
-            let module = ShaderDetails::create_shader_module(device, &code);
-            return Ok(ShaderDetails {
-                path: path.into(),
-                entry_point,
-                shader_stage,
-                code,
-                module,
-            });
-        } else {
-            bail!("\"{}\" does not exist.", path.display());
-        }
-    }
-
-    fn create_shader_module(device: &ash::Device, bytes: &Vec<u8>) -> vk::ShaderModule {
-        let shader_module_create_info = vk::ShaderModuleCreateInfo {
-            code_size: bytes.len(),
-            p_code: bytes.as_ptr() as *const u32,
-            ..Default::default()
-        };
-        unsafe {
-            device
-                .create_shader_module(&shader_module_create_info, None)
-                .expect("Couldn't create shader module.")
-        }
-    }
-
-    fn read_shader_code(file_name: &str) -> Vec<u8> {
-        let path = Path::new(file_name);
-        let file =
-            std::fs::File::open(path).expect(&format!("Failed to find spv file at {:?}", path));
-        file.bytes().flatten().collect::<Vec<u8>>()
-    }
-}
 
 #[repr(C)]
 #[derive(Clone)]
@@ -160,6 +89,7 @@ impl SurfaceDetails {
     }
 }
 
+//merge with swapchain details?
 struct SwapchainSupportDetails {
     capabilities: vk::SurfaceCapabilitiesKHR,
     formats: Vec<vk::SurfaceFormatKHR>,
@@ -233,7 +163,7 @@ pub struct App {
 
     render_pass: vk::RenderPass,
     ubo_layout: vk::DescriptorSetLayout,
-    shader_details: Vec<ShaderDetails>,
+    shader_details: Vec<shader::ShaderDetails>,
     pipeline_layout: vk::PipelineLayout,
     graphics_pipeline: vk::Pipeline,
 
@@ -268,7 +198,6 @@ pub struct App {
 }
 
 impl App {
-    const VALIDATION_LAYERS: [&'static str; 1] = ["VK_LAYER_KHRONOS_validation"];
     const REQUIRED_EXTENSION_NAMES: [*const i8; 3] = [
         Surface::name().as_ptr(),
         WaylandSurface::name().as_ptr(),
@@ -287,7 +216,8 @@ impl App {
 
         let surface_details = SurfaceDetails::new(&entry, &instance, &window, WIDTH, HEIGHT);
 
-        let (debug_utils_loader, debug_messenger) = App::setup_debug_utils(&entry, &instance);
+        let (debug_utils_loader, debug_messenger) =
+            validation::setup_debug_utils(&entry, &instance);
 
         let physical_device = App::pick_physical_device(&instance, &surface_details)?;
 
@@ -319,8 +249,8 @@ impl App {
         let ubo_layout = App::create_descriptor_set_layout(&device);
 
         let shader_details = vec![
-            ShaderDetails::new(&device, "shaders/spv/vert.spv", "main").unwrap(),
-            ShaderDetails::new(&device, "shaders/spv/frag.spv", "main").unwrap(),
+            shader::ShaderDetails::new(&device, "shaders/spv/vert.spv", "main").unwrap(),
+            shader::ShaderDetails::new(&device, "shaders/spv/frag.spv", "main").unwrap(),
         ];
 
         let (graphics_pipeline, pipeline_layout) = App::create_graphics_pipeline(
@@ -511,7 +441,6 @@ impl App {
         WindowBuilder::new()
             .with_title(TITLE)
             .with_inner_size(winit::dpi::LogicalSize::new(width, height))
-            //.with_inner_size(PhysicalSize::<u32>::from((width, height)))
             .with_resizable(true)
             .build(event_loop)
             .map_err(|_| "Couldn't create window.")
@@ -526,7 +455,7 @@ impl App {
     }
 
     fn create_instance(entry: &ash::Entry) -> Result<ash::Instance, &'static str> {
-        if VALIDATION_ENABLED && !App::check_validation_layer_support(entry) {
+        if validation::VALIDATION_ENABLED && !validation::check_validation_layer_support(entry) {
             panic!("Validation layers requested, but not available!");
         }
 
@@ -534,9 +463,9 @@ impl App {
             .api_version(vk::API_VERSION_1_3)
             .build();
 
-        let debug_utils_create_info = populate_debug_messenger_create_info();
+        let debug_utils_create_info = validation::debug_messenger_create_info();
 
-        let requred_validation_layer_raw_names: Vec<CString> = App::VALIDATION_LAYERS
+        let requred_validation_layer_raw_names: Vec<CString> = validation::VALIDATION_LAYERS
             .iter()
             .map(|layer_name| CString::new(*layer_name).unwrap())
             .collect();
@@ -545,7 +474,7 @@ impl App {
             .iter()
             .map(|layer_name| layer_name.as_ptr())
             .collect();
-
+        //fix
         let mut instance_create_info = vk::InstanceCreateInfo::builder()
             .flags(vk::InstanceCreateFlags::empty())
             .application_info(&application_info)
@@ -553,7 +482,7 @@ impl App {
             .enabled_extension_names(&App::REQUIRED_EXTENSION_NAMES)
             .build();
 
-        if VALIDATION_ENABLED {
+        if validation::VALIDATION_ENABLED {
             instance_create_info.p_next = &debug_utils_create_info
                 as *const vk::DebugUtilsMessengerCreateInfoEXT
                 as *const c_void;
@@ -561,56 +490,6 @@ impl App {
 
         unsafe { entry.create_instance(&instance_create_info, None) }
             .map_err(|_| "Couldn't create instance.")
-    }
-
-    fn check_validation_layer_support(entry: &ash::Entry) -> bool {
-        let layer_properties = entry
-            .enumerate_instance_layer_properties()
-            .expect("Couldn't enumerate instance layer properties.");
-
-        if layer_properties.is_empty() {
-            eprintln!("No available layers.");
-            return false;
-        }
-
-        for required_layer_name in App::VALIDATION_LAYERS.iter() {
-            let mut is_layer_found = false;
-
-            for layer_property in layer_properties.iter() {
-                let test_layer_name = array_to_string(&layer_property.layer_name);
-                if (*required_layer_name) == test_layer_name {
-                    is_layer_found = true;
-                    break;
-                }
-            }
-
-            if is_layer_found == false {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    fn setup_debug_utils(
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-    ) -> (ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT) {
-        let debug_utils_loader = ash::extensions::ext::DebugUtils::new(entry, instance);
-
-        if VALIDATION_ENABLED == false {
-            (debug_utils_loader, ash::vk::DebugUtilsMessengerEXT::null())
-        } else {
-            let messenger_create_info = populate_debug_messenger_create_info();
-
-            let utils_messenger = unsafe {
-                debug_utils_loader
-                    .create_debug_utils_messenger(&messenger_create_info, None)
-                    .expect("Debug Utils Callback")
-            };
-
-            (debug_utils_loader, utils_messenger)
-        }
     }
 
     //chooses the first suitable device, maybe sort?
@@ -763,7 +642,7 @@ impl App {
         let mut available_extension_names = vec![];
 
         for extension in available_extensions.iter() {
-            let extension_name = array_to_string(&extension.extension_name);
+            let extension_name = utility::array_to_string(&extension.extension_name);
             available_extension_names.push(extension_name);
         }
 
@@ -1009,16 +888,18 @@ impl App {
             .expect("Couldn't create render pass.")
     }
 
+    //make graphics pipeline a struct
     fn create_graphics_pipeline(
         device: &ash::Device,
         swapchain_details: &SwapchainDetails,
         render_pass: &vk::RenderPass,
         ubo_layout: &vk::DescriptorSetLayout,
-        shaders: &[ShaderDetails],
+        shaders: &[shader::ShaderDetails],
     ) -> (vk::Pipeline, vk::PipelineLayout) {
         let mut shader_stages_create_info: Vec<vk::PipelineShaderStageCreateInfo> = vec![];
         let entry_point = CString::new("main").expect("Couldn't make c string.");
         for shader in shaders {
+            //create shader modules here.
             let shader_stage_create_info = vk::PipelineShaderStageCreateInfo::builder()
                 .name(entry_point.as_c_str())
                 .stage(shader.shader_stage)
@@ -1027,36 +908,8 @@ impl App {
             shader_stages_create_info.push(shader_stage_create_info);
         }
 
-        //let vert_shader_code = ShaderDetails::read_shader_code("shaders/spv/vert.spv");
-        //let frag_shader_code = ShaderDetails::read_shader_code("shaders/spv/frag.spv");
-
-        //let vertex_module = App::create_shader_module(device, &vert_shader_code);
-        //let frag_module = App::create_shader_module(device, &frag_shader_code);
-
-        //let main_function_name = CString::new("main").expect("Couldn't make c string.");
-
-        //let vert_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
-        //    .name(main_function_name.as_c_str())
-        //    .stage(vk::ShaderStageFlags::VERTEX)
-        //    .module(vertex_module)
-        //    .build();
-
-        //let frag_shader_stage = vk::PipelineShaderStageCreateInfo::builder()
-        //    .name(main_function_name.as_c_str())
-        //    .stage(vk::ShaderStageFlags::FRAGMENT)
-        //    .module(frag_module)
-        //    .build();
-
-        //let shader_stages_create_info = [vert_shader_stage, frag_shader_stage];
         let binding_descriptions = Vertex::get_binding_descriptions();
         let attribute_descriptions = Vertex::get_attribute_descriptions();
-
-        //     viewport, scissor for now, multiple viewports require setting feature
-        let _dynamic_states = [vk::DynamicState::VIEWPORT]; // vk::DynamicState::SCISSOR];
-
-        let _pipeline_dyn_states = vk::PipelineDynamicStateCreateInfo::builder()
-            //.dynamic_states(&dynamic_states)
-            .build();
 
         let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
             .vertex_binding_descriptions(&binding_descriptions)
@@ -2110,6 +1963,7 @@ impl App {
                 .expect("Couldn't create image view.")
         }
     }
+    // image module
     fn create_texture_sampler(device: &ash::Device) -> vk::Sampler {
         let sampler_create_info = vk::SamplerCreateInfo::builder()
             .mag_filter(vk::Filter::LINEAR) //oversampling
@@ -2266,7 +2120,6 @@ impl App {
         width: u32,
         height: u32,
     ) {
-        let command_buffer = App::begin_single_time_command(device, command_pool);
         let buffer_image_regions = [vk::BufferImageCopy::builder()
             .image_subresource(vk::ImageSubresourceLayers {
                 aspect_mask: vk::ImageAspectFlags::COLOR,
@@ -2285,6 +2138,7 @@ impl App {
             .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
             .build()];
 
+        let command_buffer = App::begin_single_time_command(device, command_pool);
         unsafe {
             device.cmd_copy_buffer_to_image(
                 command_buffer,
@@ -2294,7 +2148,6 @@ impl App {
                 &buffer_image_regions,
             );
         }
-
         App::end_single_time_command(device, command_pool, submit_queue, command_buffer);
     }
 
@@ -2498,7 +2351,7 @@ impl Drop for App {
                 .surface_loader
                 .destroy_surface(self.surface_details.surface, None);
 
-            if VALIDATION_ENABLED {
+            if validation::VALIDATION_ENABLED {
                 self.debug_utils_loader
                     .destroy_debug_utils_messenger(self.debug_messenger, None);
             }
@@ -2507,6 +2360,7 @@ impl Drop for App {
     }
 }
 
+//should be in math module
 #[repr(C)]
 #[derive(Clone, Debug, Copy)]
 struct Vertex {
@@ -2570,52 +2424,7 @@ impl Vertex {
     }
 }
 
-unsafe extern "system" fn vulkan_debug_utils_callback(
-    message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
-    message_type: vk::DebugUtilsMessageTypeFlagsEXT,
-    p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
-    _p_user_data: *mut c_void,
-) -> vk::Bool32 {
-    let severity = match message_severity {
-        vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => "[Verbose]",
-        vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => "[Warning]",
-        vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => "[Error]",
-        vk::DebugUtilsMessageSeverityFlagsEXT::INFO => "[Info]",
-        _ => "[Unknown]",
-    };
-    let types = match message_type {
-        vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "[General]",
-        vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE => "[Performance]",
-        vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION => "[Validation]",
-        _ => "[Unknown]",
-    };
-    let message = CStr::from_ptr((*p_callback_data).p_message);
-    println!("[Debug] : {} : {}\n{:?}\n", severity, types, message);
-    vk::FALSE
-}
-
-fn populate_debug_messenger_create_info() -> vk::DebugUtilsMessengerCreateInfoEXT {
-    use vk::DebugUtilsMessageSeverityFlagsEXT as Severity;
-    use vk::DebugUtilsMessageTypeFlagsEXT as Type;
-
-    let severity = Severity::WARNING | Severity::ERROR | Severity::VERBOSE | Severity::INFO;
-    let types = Type::GENERAL | Type::PERFORMANCE | Type::VALIDATION;
-
-    vk::DebugUtilsMessengerCreateInfoEXT::builder()
-        .message_severity(severity)
-        .message_type(types)
-        .pfn_user_callback(Some(vulkan_debug_utils_callback))
-        .build()
-}
-
-fn array_to_string(array: &[c_char]) -> &str {
-    let raw_string = unsafe { CStr::from_ptr(array.as_ptr()) };
-
-    raw_string
-        .to_str()
-        .expect("Failed to convert vulkan raw string.")
-}
-
+//should be in io
 fn load_model(model_path: &Path) -> (Vec<Vertex>, Vec<u32>) {
     let _load_options = tobj::LoadOptions {
         triangulate: true,
