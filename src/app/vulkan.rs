@@ -1,4 +1,5 @@
 use crate::app::{shader, utility, validation};
+use crate::file::load;
 use crate::math::vertex;
 
 use std::collections::HashSet;
@@ -16,7 +17,6 @@ use cgmath;
 use image;
 use memoffset::offset_of;
 use raw_window_handle::HasRawDisplayHandle;
-use tobj;
 use winit::{event, event::Event, event_loop::EventLoop, window::Window, window::WindowBuilder};
 
 pub const TITLE: &str = "cad-rs";
@@ -211,7 +211,7 @@ impl App {
 
         let entry = unsafe { ash::Entry::load() }.map_err(|_| "Coudn't create Vulkan entry")?;
         //let surface_extensions = App::get_surface_extensions(event_loop)?;
-        let (vertices, indices) = load_model(&Path::new(MODEL_PATH));
+        let (vertices, indices) = load::load_model(&Path::new(MODEL_PATH));
         let instance = App::create_instance(&entry)?;
 
         let surface_details = SurfaceDetails::new(&entry, &instance, &window, WIDTH, HEIGHT);
@@ -2358,50 +2358,4 @@ impl Drop for App {
             self.instance.destroy_instance(None);
         }
     }
-}
-
-//should be in io
-fn load_model(model_path: &Path) -> (Vec<vertex::Vertex>, Vec<u32>) {
-    let _load_options = tobj::LoadOptions {
-        triangulate: true,
-        single_index: true,
-        ..Default::default()
-    };
-    let model_obj = tobj::load_obj(model_path, &tobj::LoadOptions::default())
-        .expect("Failed to load model object!");
-
-    let mut vertices = vec![];
-    let mut indices = vec![];
-
-    let (models, _) = model_obj;
-    for m in models.iter() {
-        let mesh = &m.mesh;
-
-        if mesh.texcoords.len() == 0 {
-            panic!("Missing texture coordinate for the model.")
-        }
-
-        let total_vertices_count = mesh.positions.len() / 3;
-        for i in 0..total_vertices_count {
-            let x = mesh.positions[i * 3];
-            let y = mesh.positions[i * 3 + 1];
-            let z = mesh.positions[i * 3 + 2];
-            let vertex = vertex::Vertex::new(
-                x,
-                y,
-                z,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                1.0,
-                mesh.texcoords[i * 2],
-                mesh.texcoords[i * 2 + 1],
-            );
-            vertices.push(vertex);
-        }
-
-        indices = mesh.indices.clone();
-    }
-    (vertices, indices)
 }
