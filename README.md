@@ -44,5 +44,6 @@ A CAD tool written in Rust
 - [ ] get object spinning and up right
 - [ ] keyboard and mouse input
 - [ ] manipulate object with moust input
+- [ ] mouse appears on other side of the screen like in blender
 - [ ] a couple of gui elements that affects state of application
 
