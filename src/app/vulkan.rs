@@ -2153,7 +2153,6 @@ impl App {
         swapchain_extent: vk::Extent2D,
         device_memory_properties: vk::PhysicalDeviceMemoryProperties,
     ) -> (vk::Image, vk::ImageView, vk::DeviceMemory) {
-
         let depth_format = App::find_depth_format(instance, physical_device);
         let (depth_image, depth_image_memory) = App::create_image(
             device,
@@ -2202,20 +2201,16 @@ impl App {
         tiling: vk::ImageTiling,
         features: vk::FormatFeatureFlags,
     ) -> vk::Format {
-        for &format in candidate_formats.iter() {
+        *candidate_formats.iter().filter(|format| {
             let format_properties =
-                unsafe { instance.get_physical_device_format_properties(physical_device, format) };
-            if tiling == vk::ImageTiling::LINEAR
-                && format_properties.linear_tiling_features.contains(features)
-            {
-                return format.clone();
-            } else if tiling == vk::ImageTiling::OPTIMAL
-                && format_properties.optimal_tiling_features.contains(features)
-            {
-                return format.clone();
-            }
-        }
-        panic!("Failed to find supported format!")
+                unsafe { instance.get_physical_device_format_properties(physical_device, **format) };
+
+            (tiling == vk::ImageTiling::LINEAR && format_properties.linear_tiling_features.contains(features))
+            || (tiling == vk::ImageTiling::OPTIMAL && format_properties.optimal_tiling_features.contains(features))
+        })
+        .next()
+        .ok_or_else(|| "Failed to find supported format!")
+        .unwrap()
     }
 
     fn has_stencil_component(format: vk::Format) -> bool {
