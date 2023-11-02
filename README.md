@@ -6,16 +6,14 @@ A CAD tool written in Rust
 * libvulkan-dev
 * spirv-tools
 * vulkan-validationlayers-dev
-* glslc
-* lunar vulkan sdk
+* (lunar vulkan sdk for ubuntu)[https://vulkan.lunarg.com/doc/view/latest/linux/getting_started_ubuntu.html]
 * vulkan-tools
 
 ### project structure:
 
 - image
-- application (vulkan, rendering, window, keyboard/mouse io)
-- math/geometry manipulation code (probably includes fonts)
-- gui related code
+- application (vulkan, rendering, gui, window, keyboard/mouse io)
+- math/geometry manipulation code
 - file io (saving models, outputting models to different formats, loading models, version control)
 
 ### Features To implement:

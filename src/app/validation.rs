@@ -84,7 +84,8 @@ pub fn debug_messenger_create_info() -> vk::DebugUtilsMessengerCreateInfoEXT {
     use vk::DebugUtilsMessageSeverityFlagsEXT as Severity;
     use vk::DebugUtilsMessageTypeFlagsEXT as Type;
 
-    let severity = Severity::WARNING | Severity::ERROR | Severity::VERBOSE | Severity::INFO;
+    //TODO: make constants, or arg in build.rs
+    let severity = Severity::WARNING | Severity::ERROR;//| Severity::VERBOSE | Severity::INFO;
     let types = Type::GENERAL | Type::PERFORMANCE | Type::VALIDATION;
 
     vk::DebugUtilsMessengerCreateInfoEXT::builder()
