@@ -2,22 +2,23 @@ use crate::app::{shader, utility, validation};
 use crate::file::load;
 use crate::math::vertex;
 
-use std::collections::HashSet;
-use std::ffi::{c_char, CString};
-use std::os::raw::c_void;
-use std::path::Path;
-
-use anyhow::Result;
 use ash::extensions::ext::DebugUtils;
 use ash::extensions::khr::Surface;
 use ash::extensions::khr::WaylandSurface;
 use ash::vk;
 
-use cgmath;
+use glam;
+use anyhow::Result;
 use image;
 use memoffset::offset_of;
 use raw_window_handle::HasRawDisplayHandle;
 use winit::{event, event::Event, event_loop::EventLoop, window::Window, window::WindowBuilder};
+use num;
+
+use std::collections::HashSet;
+use std::ffi::{c_char, CString};
+use std::os::raw::c_void;
+use std::path::Path;
 
 pub const TITLE: &str = "cad-rs";
 
@@ -32,9 +33,9 @@ pub const MODEL_PATH: &str = "assets/models/viking_room.obj";
 #[repr(C)]
 #[derive(Clone)]
 struct UniformBufferObject {
-    model: cgmath::Matrix4<f32>,
-    view: cgmath::Matrix4<f32>,
-    proj: cgmath::Matrix4<f32>,
+    model: glam::Mat4,
+    view: glam::Mat4,
+    proj: glam::Mat4,
 }
 
 struct QueueFamilyIndices {
@@ -359,21 +360,20 @@ impl App {
             graphics_queue,
             present_queue,
             uniform_transform: UniformBufferObject {
-                model: cgmath::Matrix4::from_angle_z(cgmath::Deg(90.0)),
-                view: cgmath::Matrix4::look_at_rh(
-                    cgmath::Point3::new(2.0, 2.0, 2.0),
-                    cgmath::Point3::new(0.0, 0.0, 0.0),
-                    cgmath::Vector3::new(0.0, 0.0, 1.0),
+                model: glam::Mat4::from_axis_angle(glam::vec3(0.0, 0.0, 1.0), num::Float::to_radians(90.0)),
+                view: glam::Mat4::look_at_rh(
+                    glam::Vec3::new(2.0, 2.0, 2.0),
+                    glam::Vec3::new(0.0, 0.0, 0.0),
+                    glam::Vec3::new(0.0, 0.0, 1.0),
                 ),
                 proj: {
-                    let mut proj = cgmath::perspective(
-                        cgmath::Deg(45.0),
+                    let mut proj = glam::Mat4::perspective_rh(
+                        num::Float::to_radians(90.0),
                         swapchain_details.extent.width as f32
                             / swapchain_details.extent.height as f32,
                         0.1,
                         10.0,
                     );
-                    proj[1][1] = proj[1][1] * -1.0;
                     proj
                 },
             },
@@ -1621,21 +1621,20 @@ impl App {
     fn update_uniform_buffer(&mut self, current_image: usize) {
         let delta_time = 0.4;
         let ubos = [UniformBufferObject {
-            model: cgmath::Matrix4::from_angle_z(cgmath::Deg(90.0 * delta_time)),
-            view: cgmath::Matrix4::look_at_rh(
-                cgmath::Point3::new(2.0, 2.0, 2.0),
-                cgmath::Point3::new(0.0, 0.0, 0.0),
-                cgmath::Vector3::new(0.0, 0.0, 1.0),
+            model: glam::Mat4::from_axis_angle(glam::vec3(0.0, 0.0, 1.0), num::Float::to_radians(90.0)),
+            view: glam::Mat4::look_at_rh(
+                glam::Vec3::new(2.0, 2.0, 2.0),
+                glam::Vec3::new(0.0, 0.0, 0.0),
+                glam::Vec3::new(0.0, 0.0, 1.0),
             ),
             proj: {
-                let proj = cgmath::perspective(
-                    cgmath::Deg(45.0),
+                let proj = glam::Mat4::perspective_rh(
+                    num::Float::to_radians(90.0),
                     self.swapchain_details.extent.width as f32
                         / self.swapchain_details.extent.height as f32,
                     0.1,
                     10.0,
                 );
-                //proj[1][1] = proj[1][1] * -1.0;
                 proj
             },
         }];

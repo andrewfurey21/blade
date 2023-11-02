@@ -1,14 +1,14 @@
 use ash::vk;
-use cgmath;
+use glam;
 
 use memoffset::offset_of;
 
 #[repr(C)]
 #[derive(Clone, Debug, Copy)]
 pub struct Vertex {
-    pub pos: cgmath::Vector4<f32>,
-    pub tex_coord: cgmath::Vector2<f32>,
-    pub color: cgmath::Vector4<f32>,
+    pub pos: glam::Vec4,
+    pub tex_coord: glam::Vec2,
+    pub color: glam::Vec4,
 }
 
 impl Vertex {
@@ -24,9 +24,9 @@ impl Vertex {
         tx: f32,
         ty: f32,
     ) -> Self {
-        let pos = cgmath::Vector4::new(x, y, z, w);
-        let color = cgmath::Vector4::new(r, g, b, a);
-        let tex_coord = cgmath::Vector2::new(tx, ty);
+        let pos = glam::Vec4::new(x, y, z, w);
+        let color = glam::Vec4::new(r, g, b, a);
+        let tex_coord = glam::Vec2::new(tx, ty);
         Vertex {
             pos,
             color,
