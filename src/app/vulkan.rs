@@ -151,6 +151,8 @@ pub struct App {
     surface_details: SurfaceDetails,
 
     physical_device: vk::PhysicalDevice,
+    device_memory_properties: vk::PhysicalDeviceMemoryProperties,
+
     queue_indices: QueueFamilyIndices,
     device: ash::Device,
 
@@ -241,7 +243,7 @@ impl App {
         let swapchain_image_views = App::create_image_views(&device, &swapchain_details);
 
         let command_pool = App::create_command_pool(&device, &queue_indices);
-        let physical_device_memory_properties =
+        let device_memory_properties =
             unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
         let render_pass =
@@ -264,10 +266,8 @@ impl App {
             &instance,
             &device,
             physical_device,
-            command_pool,
-            graphics_queue,
             swapchain_details.extent,
-            &physical_device_memory_properties,
+            device_memory_properties,
         );
 
         let swapchain_framebuffers = App::create_framebuffers(
@@ -282,6 +282,7 @@ impl App {
             &instance,
             &device,
             physical_device,
+            device_memory_properties,
             &command_pool,
             &graphics_queue,
             &vertices,
@@ -291,7 +292,7 @@ impl App {
             &device,
             command_pool,
             graphics_queue,
-            &physical_device_memory_properties,
+            device_memory_properties,
             &Path::new(TEXTURE_PATH),
         );
 
@@ -302,6 +303,7 @@ impl App {
             &instance,
             &device,
             physical_device,
+            device_memory_properties,
             command_pool,
             graphics_queue,
             &indices,
@@ -311,7 +313,7 @@ impl App {
             &instance,
             &device,
             physical_device,
-            //        &physical_device_memory_properties,
+            device_memory_properties,
             swapchain_details.images.len(),
         );
 
@@ -351,6 +353,7 @@ impl App {
             debug_messenger,
             surface_details,
             physical_device,
+            device_memory_properties,
             queue_indices,
             device,
             graphics_queue,
@@ -1288,18 +1291,12 @@ impl App {
         self.graphics_pipeline = graphics_pipeline;
         self.pipeline_layout = pipeline_layout;
 
-        let physical_device_memory_properties = unsafe {
-            self.instance
-                .get_physical_device_memory_properties(self.physical_device)
-        };
         let depth_resources = App::create_depth_resources(
             &self.instance,
             &self.device,
             self.physical_device,
-            self.command_pool,
-            self.graphics_queue,
             self.swapchain_details.extent,
-            &physical_device_memory_properties,
+            self.device_memory_properties,
         );
         self.depth_image = depth_resources.0;
         self.depth_image_view = depth_resources.1;
@@ -1332,6 +1329,7 @@ impl App {
         instance: &ash::Instance,
         device: &ash::Device,
         physical_device: vk::PhysicalDevice,
+        device_memory_properties: vk::PhysicalDeviceMemoryProperties,
         command_pool: &vk::CommandPool,
         submit_queue: &vk::Queue,
         vertices: &[T],
@@ -1445,9 +1443,9 @@ impl App {
     fn find_memory_type(
         type_filter: u32,
         required_properties: vk::MemoryPropertyFlags,
-        mem_properties: &vk::PhysicalDeviceMemoryProperties,
+        device_memory_properties: vk::PhysicalDeviceMemoryProperties,
     ) -> u32 {
-        for (i, memory_type) in mem_properties.memory_types.iter().enumerate() {
+        for (i, memory_type) in device_memory_properties.memory_types.iter().enumerate() {
             if (type_filter & (1 << i)) > 0
                 && memory_type.property_flags.contains(required_properties)
             {
@@ -1481,7 +1479,7 @@ impl App {
         let memory_type = App::find_memory_type(
             mem_requirements.memory_type_bits,
             required_memory_flags,
-            &device_memory_properties,
+            device_memory_properties,
         );
 
         let allocate_info = vk::MemoryAllocateInfo {
@@ -1510,13 +1508,12 @@ impl App {
         instance: &ash::Instance,
         device: &ash::Device,
         physical_device: vk::PhysicalDevice,
+        device_memory_properties: vk::PhysicalDeviceMemoryProperties,
         command_pool: vk::CommandPool,
         submit_queue: vk::Queue,
         indices: &[u32],
     ) -> (vk::Buffer, vk::DeviceMemory) {
         let buffer_size = std::mem::size_of_val(indices) as vk::DeviceSize;
-        let device_memory_properties =
-            unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
         let (staging_buffer, staging_buffer_memory) = App::create_buffer(
             device,
@@ -1597,11 +1594,9 @@ impl App {
         instance: &ash::Instance,
         device: &ash::Device,
         physical_device: vk::PhysicalDevice,
-        // device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+        device_memory_properties: vk::PhysicalDeviceMemoryProperties,
         swapchain_image_count: usize,
     ) -> (Vec<vk::Buffer>, Vec<vk::DeviceMemory>) {
-        let device_memory_properties =
-            unsafe { instance.get_physical_device_memory_properties(physical_device) };
         let buffer_size = std::mem::size_of::<UniformBufferObject>();
 
         let mut uniform_buffers = vec![];
@@ -1756,7 +1751,7 @@ impl App {
         device: &ash::Device,
         command_pool: vk::CommandPool,
         submit_queue: vk::Queue,
-        device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+        device_memory_properties: vk::PhysicalDeviceMemoryProperties,
         image_path: &Path,
     ) -> (vk::Image, vk::DeviceMemory) {
         let mut image_object = image::open(image_path).unwrap();
@@ -1785,7 +1780,7 @@ impl App {
             image_size,
             vk::BufferUsageFlags::TRANSFER_SRC,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            *device_memory_properties,
+            device_memory_properties,
         );
 
         unsafe {
@@ -1867,7 +1862,7 @@ impl App {
         tiling: vk::ImageTiling,
         usage: vk::ImageUsageFlags,
         required_memory_properties: vk::MemoryPropertyFlags,
-        device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+        device_memory_properties: vk::PhysicalDeviceMemoryProperties,
     ) -> (vk::Image, vk::DeviceMemory) {
         let image_create_info = vk::ImageCreateInfo::builder()
             .image_type(vk::ImageType::TYPE_2D)
@@ -2155,11 +2150,10 @@ impl App {
         instance: &ash::Instance,
         device: &ash::Device,
         physical_device: vk::PhysicalDevice,
-        _command_pool: vk::CommandPool,
-        _submit_queue: vk::Queue,
         swapchain_extent: vk::Extent2D,
-        device_memory_properties: &vk::PhysicalDeviceMemoryProperties,
+        device_memory_properties: vk::PhysicalDeviceMemoryProperties,
     ) -> (vk::Image, vk::ImageView, vk::DeviceMemory) {
+
         let depth_format = App::find_depth_format(instance, physical_device);
         let (depth_image, depth_image_memory) = App::create_image(
             device,
