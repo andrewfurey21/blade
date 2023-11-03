@@ -1,8 +1,9 @@
+use crate::app::utility;
+
 use ash::vk;
+
 use std::ffi::CStr;
 use std::os::raw::c_void;
-
-use crate::app::utility;
 
 pub const VALIDATION_ENABLED: bool = true;
 pub const VALIDATION_LAYERS: [&'static str; 1] = ["VK_LAYER_KHRONOS_validation"];
@@ -84,7 +85,7 @@ pub fn debug_messenger_create_info() -> vk::DebugUtilsMessengerCreateInfoEXT {
     use vk::DebugUtilsMessageSeverityFlagsEXT as Severity;
     use vk::DebugUtilsMessageTypeFlagsEXT as Type;
 
-    //TODO: make constants, or arg in build.rs
+    //TODO: arg in build.rs
     let severity = Severity::WARNING | Severity::ERROR; //| Severity::VERBOSE | Severity::INFO;
     let types = Type::GENERAL | Type::PERFORMANCE | Type::VALIDATION;
 

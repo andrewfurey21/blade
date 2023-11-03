@@ -3,6 +3,8 @@ name = "cad-rs"
 version = "0.1.0"
 edition = "2021"
 
+[build-dependencies]
+shaderc = "0.8.2"
 
 [dependencies]
 num = "0.4.0"

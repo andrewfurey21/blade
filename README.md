@@ -6,7 +6,7 @@ A CAD tool written in Rust
 * libvulkan-dev
 * spirv-tools
 * vulkan-validationlayers-dev
-* (lunar vulkan sdk for ubuntu)[https://vulkan.lunarg.com/doc/view/latest/linux/getting_started_ubuntu.html]
+* [lunar vulkan sdk for ubuntu](https://vulkan.lunarg.com/doc/view/latest/linux/getting_started_ubuntu.html)
 * vulkan-tools
 
 ### project structure:
@@ -24,6 +24,7 @@ A CAD tool written in Rust
 - [ ] Decent gui 
 
 ### TODO
+- [ ] improve panics in readme for shaders and stuff
 - [ ] fix for coloring based on opacity in color_blend_attachment_state_create_info in create_graphics_pipeline
 - [ ] fix how you setup command buffers, take a look at single time recording, seperate recording from creation in create_command_buffers
 - [ ] image module, sort out textures, fix other cases for image_data

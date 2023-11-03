@@ -7,13 +7,13 @@ use ash::extensions::khr::Surface;
 use ash::extensions::khr::WaylandSurface;
 use ash::vk;
 
-use glam;
 use anyhow::Result;
+use glam;
 use image;
 use memoffset::offset_of;
+use num;
 use raw_window_handle::HasRawDisplayHandle;
 use winit::{event, event::Event, event_loop::EventLoop, window::Window, window::WindowBuilder};
-use num;
 
 use std::collections::HashSet;
 use std::ffi::{c_char, CString};
@@ -252,8 +252,8 @@ impl App {
         let ubo_layout = App::create_descriptor_set_layout(&device);
 
         let shader_details = vec![
-            shader::ShaderDetails::new(&device, "shaders/spv/vert.spv", "main").unwrap(),
-            shader::ShaderDetails::new(&device, "shaders/spv/frag.spv", "main").unwrap(),
+            shader::ShaderDetails::new(&device, "shaders/spv/vert.glsl", "main").unwrap(),
+            shader::ShaderDetails::new(&device, "shaders/spv/frag.glsl", "main").unwrap(),
         ];
 
         let (graphics_pipeline, pipeline_layout) = App::create_graphics_pipeline(
@@ -360,7 +360,10 @@ impl App {
             graphics_queue,
             present_queue,
             uniform_transform: UniformBufferObject {
-                model: glam::Mat4::from_axis_angle(glam::vec3(0.0, 0.0, 1.0), num::Float::to_radians(90.0)),
+                model: glam::Mat4::from_axis_angle(
+                    glam::vec3(0.0, 0.0, 1.0),
+                    num::Float::to_radians(90.0),
+                ),
                 view: glam::Mat4::look_at_rh(
                     glam::Vec3::new(2.0, 2.0, 2.0),
                     glam::Vec3::new(0.0, 0.0, 0.0),
@@ -458,7 +461,8 @@ impl App {
     }
 
     fn create_instance(entry: &ash::Entry) -> Result<ash::Instance, &'static str> {
-        if validation::VALIDATION_ENABLED && !validation::check_validation_layer_support(entry) {
+        use validation::*;
+        if VALIDATION_ENABLED && !check_validation_layer_support(entry) {
             panic!("Validation layers requested, but not available!");
         }
 
@@ -466,9 +470,9 @@ impl App {
             .api_version(vk::API_VERSION_1_3)
             .build();
 
-        let debug_utils_create_info = validation::debug_messenger_create_info();
+        let debug_utils_create_info = debug_messenger_create_info();
 
-        let requred_validation_layer_raw_names: Vec<CString> = validation::VALIDATION_LAYERS
+        let requred_validation_layer_raw_names: Vec<CString> = VALIDATION_LAYERS
             .iter()
             .map(|layer_name| CString::new(*layer_name).unwrap())
             .collect();
@@ -485,7 +489,7 @@ impl App {
             .enabled_extension_names(&App::REQUIRED_EXTENSION_NAMES)
             .build();
 
-        if validation::VALIDATION_ENABLED {
+        if VALIDATION_ENABLED {
             instance_create_info.p_next = &debug_utils_create_info
                 as *const vk::DebugUtilsMessengerCreateInfoEXT
                 as *const c_void;
@@ -1621,7 +1625,10 @@ impl App {
     fn update_uniform_buffer(&mut self, current_image: usize) {
         let delta_time = 0.4;
         let ubos = [UniformBufferObject {
-            model: glam::Mat4::from_axis_angle(glam::vec3(0.0, 0.0, 1.0), num::Float::to_radians(90.0)),
+            model: glam::Mat4::from_axis_angle(
+                glam::vec3(0.0, 0.0, 1.0),
+                num::Float::to_radians(90.0),
+            ),
             view: glam::Mat4::look_at_rh(
                 glam::Vec3::new(2.0, 2.0, 2.0),
                 glam::Vec3::new(0.0, 0.0, 0.0),
@@ -2200,16 +2207,21 @@ impl App {
         tiling: vk::ImageTiling,
         features: vk::FormatFeatureFlags,
     ) -> vk::Format {
-        *candidate_formats.iter().filter(|format| {
-            let format_properties =
-                unsafe { instance.get_physical_device_format_properties(physical_device, **format) };
+        *candidate_formats
+            .iter()
+            .filter(|format| {
+                let format_properties = unsafe {
+                    instance.get_physical_device_format_properties(physical_device, **format)
+                };
 
-            (tiling == vk::ImageTiling::LINEAR && format_properties.linear_tiling_features.contains(features))
-            || (tiling == vk::ImageTiling::OPTIMAL && format_properties.optimal_tiling_features.contains(features))
-        })
-        .next()
-        .ok_or_else(|| "Failed to find supported format!")
-        .unwrap()
+                (tiling == vk::ImageTiling::LINEAR
+                    && format_properties.linear_tiling_features.contains(features))
+                    || (tiling == vk::ImageTiling::OPTIMAL
+                        && format_properties.optimal_tiling_features.contains(features))
+            })
+            .next()
+            .ok_or_else(|| "Failed to find supported format!")
+            .unwrap()
     }
 
     fn has_stencil_component(format: vk::Format) -> bool {
