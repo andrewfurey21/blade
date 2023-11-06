@@ -24,6 +24,8 @@ A CAD tool written in Rust
 - [ ] Decent gui 
 
 ### TODO
+- [ ] recursively compile shaders in shaders/
+- [ ] fix warnings
 - [ ] improve panics in readme for shaders and stuff
 - [ ] fix for coloring based on opacity in color_blend_attachment_state_create_info in create_graphics_pipeline
 - [ ] fix how you setup command buffers, take a look at single time recording, seperate recording from creation in create_command_buffers

@@ -4,11 +4,14 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::io::Read;
 use std::path::Path;
+use std::env;
 
 pub const SHADER_DIR: &str = "./shaders/src/";
 pub const SPIRV_DIR: &str = "./shaders/spv/";
 
 fn main() {
+    let profile = env::var("PROFILE").unwrap();
+
     let shader_compiler = shaderc::Compiler::new().expect("Couldn't create spir-v compiler.");
     let shader_options = shaderc::CompileOptions::new().unwrap();
 
@@ -46,7 +49,6 @@ fn main() {
             shader_file.read_to_string(&mut source);
 
             let output_file_name = match shader_type {
-                //TODO: make parameters
                 shaderc::ShaderKind::Vertex => "shaders/spv/vert.glsl",
                 shaderc::ShaderKind::Fragment => "shaders/spv/frag.glsl",
                 _ => panic!("Unimplemented shader type.")
@@ -66,5 +68,12 @@ fn main() {
         }
     } else {
         panic!("The shaders directory does not exist.");
+    }
+
+    match profile.as_str() {
+        "debug" => (),
+        "release" => (),
+        _ => (),
+
     }
 }

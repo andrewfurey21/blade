@@ -252,8 +252,8 @@ impl App {
         let ubo_layout = App::create_descriptor_set_layout(&device);
 
         let shader_details = vec![
-            shader::ShaderDetails::new(&device, "shaders/spv/vert.glsl", "main").unwrap(),
-            shader::ShaderDetails::new(&device, "shaders/spv/frag.glsl", "main").unwrap(),
+            shader::ShaderDetails::new(&device, "shaders/spv/vert.glsl", vk::ShaderStageFlags::VERTEX).unwrap(),
+            shader::ShaderDetails::new(&device, "shaders/spv/frag.glsl", vk::ShaderStageFlags::FRAGMENT).unwrap(),
         ];
 
         let (graphics_pipeline, pipeline_layout) = App::create_graphics_pipeline(
@@ -901,12 +901,12 @@ impl App {
         swapchain_details: &SwapchainDetails,
         render_pass: &vk::RenderPass,
         ubo_layout: &vk::DescriptorSetLayout,
-        shaders: &[shader::ShaderDetails],
+        shader_details: &[shader::ShaderDetails],
     ) -> (vk::Pipeline, vk::PipelineLayout) {
         let mut shader_stages_create_info: Vec<vk::PipelineShaderStageCreateInfo> = vec![];
         let entry_point = CString::new("main").expect("Couldn't make c string.");
-        for shader in shaders {
-            //create shader modules here.
+
+        for shader in shader_details {
             let shader_stage_create_info = vk::PipelineShaderStageCreateInfo::builder()
                 .name(entry_point.as_c_str())
                 .stage(shader.shader_stage)
