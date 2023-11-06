@@ -252,8 +252,18 @@ impl App {
         let ubo_layout = App::create_descriptor_set_layout(&device);
 
         let shader_details = vec![
-            shader::ShaderDetails::new(&device, "shaders/spv/vert.glsl", vk::ShaderStageFlags::VERTEX).unwrap(),
-            shader::ShaderDetails::new(&device, "shaders/spv/frag.glsl", vk::ShaderStageFlags::FRAGMENT).unwrap(),
+            shader::ShaderDetails::new(
+                &device,
+                "shaders/spv/vertex_shader.spv",
+                vk::ShaderStageFlags::VERTEX,
+            )
+            .unwrap(),
+            shader::ShaderDetails::new(
+                &device,
+                "shaders/spv/fragment_shader.spv",
+                vk::ShaderStageFlags::FRAGMENT,
+            )
+            .unwrap(),
         ];
 
         let (graphics_pipeline, pipeline_layout) = App::create_graphics_pipeline(

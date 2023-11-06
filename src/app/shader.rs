@@ -12,7 +12,11 @@ pub struct ShaderDetails {
 }
 
 impl ShaderDetails {
-    pub fn new(device: &ash::Device, file_name: &str, shader_stage: vk::ShaderStageFlags) -> Result<ShaderDetails> {
+    pub fn new(
+        device: &ash::Device,
+        file_name: &str,
+        shader_stage: vk::ShaderStageFlags,
+    ) -> Result<ShaderDetails> {
         let path = Path::new(file_name);
         if path.exists() {
             let file = std::fs::File::open(path)
@@ -25,14 +29,13 @@ impl ShaderDetails {
                 module,
             });
         } else {
-            bail!("\"{}\" does not exist.", path.display());
+            bail!("File \"{}\" does not exist.", path.display());
         }
     }
 
     fn create_shader_module(device: &ash::Device, bytes: &Vec<u8>) -> vk::ShaderModule {
         let code: &[u32] = bytemuck::try_cast_slice(bytes).unwrap();
-        let shader_module_create_info = vk::ShaderModuleCreateInfo::builder()
-            .code(code);
+        let shader_module_create_info = vk::ShaderModuleCreateInfo::builder().code(code);
         unsafe {
             device
                 .create_shader_module(&shader_module_create_info, None)
