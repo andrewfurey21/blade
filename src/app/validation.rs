@@ -1,6 +1,7 @@
 use crate::app::utility;
 
 use ash::vk;
+use colored::Colorize;
 
 use std::ffi::CStr;
 use std::os::raw::c_void;
@@ -14,7 +15,7 @@ pub fn check_validation_layer_support(entry: &ash::Entry) -> bool {
         .expect("Couldn't enumerate instance layer properties.");
 
     if layer_properties.is_empty() {
-        eprintln!("No available layers.");
+        println!("No available layers.");
         return false;
     }
 
@@ -64,20 +65,22 @@ unsafe extern "system" fn vulkan_debug_utils_callback(
     _p_user_data: *mut c_void,
 ) -> vk::Bool32 {
     let severity = match message_severity {
-        vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => "[Verbose]",
-        vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => "[Warning]",
-        vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => "[Error]",
-        vk::DebugUtilsMessageSeverityFlagsEXT::INFO => "[Info]",
-        _ => "[Unknown]",
+        vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => "Verbose".bold().green(),
+        vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => "Warning".bold().yellow(),
+        vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => "Error".bold().red(),
+        vk::DebugUtilsMessageSeverityFlagsEXT::INFO => "Info".bold().blue(),
+        _ => "Unknown".into(),
     };
     let types = match message_type {
-        vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "[General]",
-        vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE => "[Performance]",
-        vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION => "[Validation]",
-        _ => "[Unknown]",
+        vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "General".underline(),
+        vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE => "Performance".underline(),
+        vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION => "Validation".underline(),
+        vk::DebugUtilsMessageTypeFlagsEXT::DEVICE_ADDRESS_BINDING => "Address Binding".underline(),
+        _ => "Unknown".underline(),
     };
-    let message = CStr::from_ptr((*p_callback_data).p_message);
-    println!("[Debug] : {} : {}\n{:?}\n", severity, types, message);
+    let message = CStr::from_ptr((*p_callback_data).p_message).to_str().unwrap();
+    let message = message.trim();
+    println!("{}: {}\n{}\n", types, severity, message);
     vk::FALSE
 }
 
@@ -86,7 +89,7 @@ pub fn debug_messenger_create_info() -> vk::DebugUtilsMessengerCreateInfoEXT {
     use vk::DebugUtilsMessageTypeFlagsEXT as Type;
 
     //TODO: arg in build.rs
-    let severity = Severity::WARNING | Severity::ERROR; //| Severity::VERBOSE | Severity::INFO;
+    let severity = Severity::WARNING | Severity::ERROR | Severity::VERBOSE | Severity::INFO;
     let types = Type::GENERAL | Type::PERFORMANCE | Type::VALIDATION;
 
     vk::DebugUtilsMessengerCreateInfoEXT::builder()

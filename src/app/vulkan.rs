@@ -20,7 +20,7 @@ use std::ffi::{c_char, CString};
 use std::os::raw::c_void;
 use std::path::Path;
 
-pub const TITLE: &str = "cad-rs";
+pub const TITLE: &str = "blade";
 
 pub const WIDTH: u32 = 800;
 pub const HEIGHT: u32 = 600;
