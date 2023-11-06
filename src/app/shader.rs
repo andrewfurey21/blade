@@ -4,12 +4,14 @@ use ash::vk;
 use std::io::Read;
 use std::path::Path;
 
+use bytemuck;
+
 pub struct ShaderDetails {
+    pub module: vk::ShaderModule,
+    pub shader_stage: vk::ShaderStageFlags,
     path: Box<Path>,
     entry_point: String,
-    pub shader_stage: vk::ShaderStageFlags,
     code: Vec<u8>,
-    pub module: vk::ShaderModule,
 }
 
 impl ShaderDetails {
@@ -53,11 +55,9 @@ impl ShaderDetails {
     }
 
     fn create_shader_module(device: &ash::Device, bytes: &Vec<u8>) -> vk::ShaderModule {
-        let shader_module_create_info = vk::ShaderModuleCreateInfo {
-            code_size: bytes.len(),
-            p_code: bytes.as_ptr() as *const u32,
-            ..Default::default()
-        };
+        let code: &[u32] = bytemuck::try_cast_slice(bytes).unwrap();
+        let shader_module_create_info = vk::ShaderModuleCreateInfo::builder()
+            .code(code);
         unsafe {
             device
                 .create_shader_module(&shader_module_create_info, None)
