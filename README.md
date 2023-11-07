@@ -4,14 +4,13 @@ A CAD tool written in Rust
 
 ### Project Structure:
 
-- blade-image: Image related functions, decoding images (bitmap, png, jpg, svg), edge detection
-- blade-app (vulkan, rendering, gui, window, keyboard/mouse io)
 - blade-core: math + geometry manipulation code
-- blade-io (saving models, outputting models to different formats, loading models)
-- blade-vc: version control
+- blade-app: rendering, gui, window, keyboard/mouse io
+- blade-io: saving models, outputting models to different formats, loading models, version control
+- blade-image: Image related functions, encoding/decoding images (bitmap, png, jpg, svg), edge detection, rendering
 
 ### Goals:
-The goal of this project is to make a fast CAD kernel, using the GPU when possible.
+The goal of this project is to make a fast CAD kernel, using the GPU when possible, and as much multithreading as possible.
 
 ### Tools Installed (ubuntu):
 * libvulkan-dev
@@ -21,11 +20,11 @@ The goal of this project is to make a fast CAD kernel, using the GPU when possib
 * vulkan-tools
 
 ### Current To Do List
+- [ ] Seperate project into list of crates
 - [ ] recursively compile shaders in shaders/
 - [ ] fix release mode errors
-- [ ] fix for coloring based on opacity in color_blend_attachment_state_create_info in create_graphics_pipeline
 - [ ] fix how you setup command buffers, take a look at single time recording, seperate recording from creation in create_command_buffers
-- [ ] image module, sort out textures, fix other cases for image_data
+- [ ] fix image module, sort out textures, fix other cases for image_data
 - [ ] fps
 - [ ] Update create_graphics_pipeline to have more parameters on how it should be set up. Maybe use struct to define what the graphics pipeline should look like.
 - [ ] use gpu_allocator
