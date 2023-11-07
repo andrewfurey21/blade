@@ -14,7 +14,8 @@ fn main() {
     let profile = env::var("PROFILE").unwrap();
 
     let shader_compiler = shaderc::Compiler::new().expect("Couldn't create spir-v compiler.");
-    let shader_options = shaderc::CompileOptions::new().unwrap();
+    let mut compiler_options = shaderc::CompileOptions::new().unwrap();
+    compiler_options.set_target_spirv(shaderc::SpirvVersion::V1_4);
 
     let shader_dir = Path::new(SHADER_DIR);
     let output_dir = Path::new(OUTPUT_DIR);
@@ -24,15 +25,11 @@ fn main() {
             "Creating output directory for spirv files called {:?}.",
             output_dir
         );
-        fs::create_dir(output_dir);
+        fs::create_dir(output_dir).expect("Couldn't create output directory.");
     }
 
     if shader_dir.is_dir() {
         let shader_dir = shader_dir.read_dir().unwrap();
-
-        let mut compiler_options = shaderc::CompileOptions::new().unwrap();
-        compiler_options.set_target_spirv(shaderc::SpirvVersion::V1_4);
-
         //TODO: recursively check directories for shaders
         for shader in shader_dir {
             let shader_path = shader.unwrap().path();
@@ -50,7 +47,8 @@ fn main() {
             let source_name = shader_path.file_name().unwrap().to_str().unwrap();
             let mut shader_file = File::open(shader_path.clone()).expect("Couldn't open file.");
             let mut source = String::from("");
-            shader_file.read_to_string(&mut source);
+
+            let _bytes = shader_file.read_to_string(&mut source).expect("Couldn't write file to string. Maybe not valid UTF-8?");
 
             let source_name_stem = shader_path.file_stem().unwrap().to_str().unwrap();
 
@@ -76,7 +74,7 @@ fn main() {
                 .unwrap();
 
             let mut binary_file = File::create(&output_file_name).unwrap();
-            binary_file.write_all(compiler_artifact.as_binary_u8());
+            binary_file.write_all(compiler_artifact.as_binary_u8()).expect("Couldn't write.");
         }
     } else {
         panic!("The shaders directory does not exist.");

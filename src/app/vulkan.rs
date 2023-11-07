@@ -10,7 +10,6 @@ use ash::vk;
 use anyhow::Result;
 use glam;
 use image;
-use memoffset::offset_of;
 use num;
 use raw_window_handle::HasRawDisplayHandle;
 use winit::{event, event::Event, event_loop::EventLoop, window::Window, window::WindowBuilder};
@@ -187,7 +186,7 @@ pub struct App {
     depth_image_view: vk::ImageView,
     depth_image_memory: vk::DeviceMemory,
 
-    uniform_transform: UniformBufferObject,
+    _uniform_transform: UniformBufferObject,
     uniform_buffers: Vec<vk::Buffer>,
     uniform_buffers_memory: Vec<vk::DeviceMemory>,
 
@@ -290,9 +289,7 @@ impl App {
         );
 
         let (vertex_buffer, vertex_buffer_memory) = App::create_vertex_buffer(
-            &instance,
             &device,
-            physical_device,
             device_memory_properties,
             &command_pool,
             &graphics_queue,
@@ -311,9 +308,7 @@ impl App {
         let texture_sampler = App::create_texture_sampler(&device);
 
         let (index_buffer, index_buffer_memory) = App::create_index_buffer(
-            &instance,
             &device,
-            physical_device,
             device_memory_properties,
             command_pool,
             graphics_queue,
@@ -321,9 +316,7 @@ impl App {
         );
 
         let (uniform_buffers, uniform_buffers_memory) = App::create_uniform_buffers(
-            &instance,
             &device,
-            physical_device,
             device_memory_properties,
             swapchain_details.images.len(),
         );
@@ -369,7 +362,7 @@ impl App {
             device,
             graphics_queue,
             present_queue,
-            uniform_transform: UniformBufferObject {
+            _uniform_transform: UniformBufferObject {
                 model: glam::Mat4::from_axis_angle(
                     glam::vec3(0.0, 0.0, 1.0),
                     num::Float::to_radians(90.0),
@@ -380,7 +373,7 @@ impl App {
                     glam::Vec3::new(0.0, 0.0, 1.0),
                 ),
                 proj: {
-                    let mut proj = glam::Mat4::perspective_rh(
+                    let proj = glam::Mat4::perspective_rh(
                         num::Float::to_radians(90.0),
                         swapchain_details.extent.width as f32
                             / swapchain_details.extent.height as f32,
@@ -1340,17 +1333,13 @@ impl App {
     }
 
     fn create_vertex_buffer<T>(
-        instance: &ash::Instance,
         device: &ash::Device,
-        physical_device: vk::PhysicalDevice,
         device_memory_properties: vk::PhysicalDeviceMemoryProperties,
         command_pool: &vk::CommandPool,
         submit_queue: &vk::Queue,
         vertices: &[T],
     ) -> (vk::Buffer, vk::DeviceMemory) {
         let buffer_size = std::mem::size_of_val(vertices) as vk::DeviceSize; //u64
-        let device_memory_properties =
-            unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
         let (staging_buffer, staging_buffer_memory) = App::create_buffer(
             device,
@@ -1519,9 +1508,7 @@ impl App {
     }
 
     fn create_index_buffer(
-        instance: &ash::Instance,
         device: &ash::Device,
-        physical_device: vk::PhysicalDevice,
         device_memory_properties: vk::PhysicalDeviceMemoryProperties,
         command_pool: vk::CommandPool,
         submit_queue: vk::Queue,
@@ -1605,9 +1592,7 @@ impl App {
     }
 
     fn create_uniform_buffers(
-        instance: &ash::Instance,
         device: &ash::Device,
-        physical_device: vk::PhysicalDevice,
         device_memory_properties: vk::PhysicalDeviceMemoryProperties,
         swapchain_image_count: usize,
     ) -> (Vec<vk::Buffer>, Vec<vk::DeviceMemory>) {
@@ -1633,7 +1618,7 @@ impl App {
 
     //this is where the data actually gets added to the ubo
     fn update_uniform_buffer(&mut self, current_image: usize) {
-        let delta_time = 0.4;
+        let _delta_time = 0.4;
         let ubos = [UniformBufferObject {
             model: glam::Mat4::from_axis_angle(
                 glam::vec3(0.0, 0.0, 1.0),
