@@ -144,6 +144,7 @@ pub struct App {
     _entry: ash::Entry,
     window: Window,
     instance: ash::Instance,
+    validation_enabled: bool,
 
     debug_utils_loader: ash::extensions::ext::DebugUtils,
     debug_messenger: vk::DebugUtilsMessengerEXT,
@@ -208,13 +209,13 @@ impl App {
 
     const DEVICE_EXTENSIONS: [&'static str; 1] = ["VK_KHR_swapchain"];
 
-    pub fn new(event_loop: &EventLoop<()>) -> Result<App, &'static str> {
+    pub fn new(event_loop: &EventLoop<()>, validation_enabled: bool) -> Result<App, &'static str> {
         let window = App::init_window(event_loop, WIDTH, HEIGHT)?;
 
         let entry = unsafe { ash::Entry::load() }.map_err(|_| "Coudn't create Vulkan entry")?;
         //let surface_extensions = App::get_surface_extensions(event_loop)?;
         let (vertices, indices) = load::load_model(&Path::new(MODEL_PATH));
-        let instance = App::create_instance(&entry)?;
+        let instance = App::create_instance(&entry, validation_enabled)?;
 
         let surface_details = SurfaceDetails::new(&entry, &instance, &window, WIDTH, HEIGHT);
 
@@ -353,6 +354,7 @@ impl App {
             _entry: entry,
             window,
             instance,
+            validation_enabled,
             debug_utils_loader,
             debug_messenger,
             surface_details,
@@ -463,9 +465,9 @@ impl App {
             .map_err(|_| "Couldn't enumerate required extensions.")
     }
 
-    fn create_instance(entry: &ash::Entry) -> Result<ash::Instance, &'static str> {
+    fn create_instance(entry: &ash::Entry, validation_enabled: bool) -> Result<ash::Instance, &'static str> {
         use validation::*;
-        if VALIDATION_ENABLED && !check_validation_layer_support(entry) {
+        if validation_enabled && !check_validation_layer_support(entry) {
             panic!("Validation layers requested, but not available!");
         }
 
@@ -492,7 +494,7 @@ impl App {
             .enabled_extension_names(&App::REQUIRED_EXTENSION_NAMES)
             .build();
 
-        if VALIDATION_ENABLED {
+        if validation_enabled {
             instance_create_info.p_next = &debug_utils_create_info
                 as *const vk::DebugUtilsMessengerCreateInfoEXT
                 as *const c_void;
@@ -2346,7 +2348,7 @@ impl Drop for App {
                 .surface_loader
                 .destroy_surface(self.surface_details.surface, None);
 
-            if validation::VALIDATION_ENABLED {
+            if self.validation_enabled {
                 self.debug_utils_loader
                     .destroy_debug_utils_messenger(self.debug_messenger, None);
             }
