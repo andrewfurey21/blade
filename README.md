@@ -1,16 +1,17 @@
 # blade 
 
-A CAD tool written in Rust
-
+The goal of this project is to make a fast, simple CAD kernel, using the GPU when possible.
+    
 ### Project Structure:
 
-- blade-core: math + geometry manipulation code
-- blade-app: rendering, gui, window, keyboard/mouse io
-- blade-io: saving models, outputting models to different formats, loading models, version control
-- blade-image: Image related functions, encoding/decoding images (bitmap, png, jpg, svg), edge detection, rendering (raytracing?)
-
-### Goals:
-The goal of this project is to make a fast CAD kernel, using the GPU when possible, and as much multithreading as possible.
+- benches
+- tests (integration)
+- example 
+- src/ (include unit tests)
+  - blade-core: math + geometry manipulation code
+  - blade-app: rendering, gui, window, keyboard/mouse io
+  - blade-io: saving models, outputting models to different formats, loading models, version control
+  - blade-image: Image related functions, encoding/decoding images (bitmap, png, jpg, svg), edge detection, rendering (raytracing?)
 
 ### Tools Installed (ubuntu):
 * libvulkan-dev

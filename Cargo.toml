@@ -1,23 +1,28 @@
-[package]
-name = "blade"
+[workspace]
+resolver = "2"
+members = [
+        "blade-app",
+        "blade-core",
+        "blade-io",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
+description = "A simple, fast CAD kernel and application."
+readme = "README.md"
+repository = "https://github.com/andrewfurey21/blade"
+license = "MIT"
+authors = ["Andrew Furey"]
 
-[build-dependencies]
-shaderc = "0.8.2"
+[workspace.dependencies.blade-app]
+version = "0.1.0"
+path = "blade-app/"
 
-[dependencies]
-num = "0.4.0"
-ash = "0.37.3"
-ash-window = "0.12.0"
-env_logger = "0.10.0"
-log = "0.4.17"
-winit = "0.28.6"
-raw-window-handle = "0.5.2"
-glam = "0.24.2"
-image = "0.24.6"
-memoffset = "0.9.0"
-tobj = "4.0.0"
-anyhow = "1.0.75"
-bytemuck = "1.14.0"
-colored = "2.0.4"
+[workspace.dependencies.blade-core]
+version = "0.1.0"
+path = "blade-core/"
+
+[workspace.dependencies.blade-io]
+version = "0.1.0"
+path = "blade-io/"

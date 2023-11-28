@@ -1,4 +1,4 @@
-use crate::app::utility;
+use crate::utility;
 
 use ash::vk;
 use colored::Colorize;

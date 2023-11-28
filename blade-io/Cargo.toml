@@ -1,0 +1,12 @@
+[package]
+name = "blade-io"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+readme.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+blade-core.workspace = true
+tobj = "4.0.0"

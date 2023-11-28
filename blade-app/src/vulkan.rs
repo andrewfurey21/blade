@@ -1,6 +1,6 @@
-use crate::app::{shader, utility, validation};
-use crate::file::load;
-use crate::math::vertex;
+use crate::{shader, utility, validation};
+use blade_io::load;
+use blade_core::vertex;
 
 use ash::extensions::ext::DebugUtils;
 use ash::extensions::khr::Surface;

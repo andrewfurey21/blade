@@ -1,4 +1,4 @@
-use crate::math::vertex;
+use blade_core::vertex;
 use std::path::Path;
 use tobj;
 
